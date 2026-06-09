@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class SettingsTile extends StatelessWidget {
   const SettingsTile({
@@ -8,7 +9,13 @@ class SettingsTile extends StatelessWidget {
     required this.subtitle,
     this.trailing,
     this.palette,
+    this.selectedColor,
+    this.onPaletteColorSelected,
     this.segmentedValues,
+    this.selectedSegmentIndex,
+    this.onSegmentChanged,
+    this.onTap,
+    this.note,
   });
 
   final IconData icon;
@@ -16,29 +23,39 @@ class SettingsTile extends StatelessWidget {
   final String subtitle;
   final IconData? trailing;
   final List<Color>? palette;
+  final Color? selectedColor;
+  final ValueChanged<Color>? onPaletteColorSelected;
   final List<String>? segmentedValues;
+  final int? selectedSegmentIndex;
+  final ValueChanged<int>? onSegmentChanged;
+  final VoidCallback? onTap;
+  final String? note;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    Widget tileContent = Container(
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFFE3E4DF)),
+        color: isDark ? Colors.black.withValues(alpha: 0.24) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppThemeColors.stroke),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                width: 64,
-                height: 64,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE2E3DE),
-                  borderRadius: BorderRadius.circular(16),
+                  color: isDark ? AppThemeColors.pillSelected : const Color(0xFFEEEEEB),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(icon, size: 28),
+                child: Icon(icon, size: 20, color: AppThemeColors.textStrong),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -47,15 +64,16 @@ class SettingsTile extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                            fontSize: 19,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: AppThemeColors.textStrong,
                           ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       subtitle,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: const Color(0xFF5F635B),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                            color: AppThemeColors.textSoft,
                           ),
                     ),
                   ],
@@ -65,22 +83,48 @@ class SettingsTile extends StatelessWidget {
                 Row(
                   children: palette!
                       .map(
-                        (color) => Padding(
-                          padding: const EdgeInsets.only(left: 8),
-                          child: Container(
-                            width: 22,
-                            height: 22,
-                            decoration: BoxDecoration(
-                              color: color,
-                              shape: BoxShape.circle,
+                        (color) {
+                          final isSelected = selectedColor?.value == color.value;
+                          return Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: GestureDetector(
+                              onTap: () {
+                                if (onPaletteColorSelected != null) {
+                                  onPaletteColorSelected!(color);
+                                }
+                              },
+                              child: Container(
+                                width: 26,
+                                height: 26,
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: isSelected 
+                                        ? AppThemeColors.textStrong 
+                                        : Colors.transparent,
+                                    width: 2,
+                                  ),
+                                  boxShadow: isSelected ? [
+                                    BoxShadow(
+                                      color: color.withValues(alpha: 0.4),
+                                      blurRadius: 6,
+                                      spreadRadius: 1,
+                                    )
+                                  ] : null,
+                                ),
+                                child: isSelected 
+                                    ? const Icon(Icons.check, size: 14, color: Colors.white)
+                                    : null,
+                              ),
                             ),
-                          ),
-                        ),
+                          );
+                        },
                       )
                       .toList(),
                 )
               else if (trailing != null)
-                Icon(trailing, size: 26),
+                Icon(trailing, size: 24, color: AppThemeColors.textSoft),
             ],
           ),
           if (segmentedValues != null) ...[
@@ -88,23 +132,44 @@ class SettingsTile extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
-                color: const Color(0xFFDFE0DC),
+                color: isDark ? AppThemeColors.pill : const Color(0xFFDFE0DC),
                 borderRadius: BorderRadius.circular(18),
               ),
               child: Row(
                 children: [
                   for (var i = 0; i < segmentedValues!.length; i++)
                     Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          color: i == 0 ? Colors.white : Colors.transparent,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Text(
-                          segmentedValues![i],
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.titleMedium,
+                      child: GestureDetector(
+                        onTap: () {
+                          if (onSegmentChanged != null) {
+                            onSegmentChanged!(i);
+                          }
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: (selectedSegmentIndex ?? 0) == i 
+                                ? (isDark ? AppThemeColors.pillSelected : Colors.white) 
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: (selectedSegmentIndex ?? 0) == i && !isDark ? [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.05),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              )
+                            ] : null,
+                          ),
+                          child: Text(
+                            segmentedValues![i],
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              color: AppThemeColors.textStrong,
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -112,13 +177,30 @@ class SettingsTile extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            Text(
-              'Keep audio on this device. Voice input stops working if on-device speech recognition isn’t supported.',
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.45),
-            ),
+            if (note != null)
+              Text(
+                note!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppThemeColors.textSoft,
+                  height: 1.5,
+                ),
+              ),
           ],
         ],
       ),
     );
+
+    if (onTap != null && palette == null && segmentedValues == null) {
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: onTap,
+          child: tileContent,
+        ),
+      );
+    }
+
+    return tileContent;
   }
 }

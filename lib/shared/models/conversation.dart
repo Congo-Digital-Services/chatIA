@@ -1,5 +1,7 @@
 import 'chat_message.dart';
 
+enum ConversationType { chat, note, channel }
+
 class Conversation {
   const Conversation({
     required this.id,
@@ -9,6 +11,7 @@ class Conversation {
     required this.isPinned,
     required this.messages,
     this.heroAssetLabel,
+    this.type = ConversationType.chat,
   });
 
   final String id;
@@ -18,6 +21,7 @@ class Conversation {
   final bool isPinned;
   final String? heroAssetLabel;
   final List<ChatMessage> messages;
+  final ConversationType type;
 
   Conversation copyWith({
     String? id,
@@ -27,6 +31,7 @@ class Conversation {
     bool? isPinned,
     String? heroAssetLabel,
     List<ChatMessage>? messages,
+    ConversationType? type,
   }) {
     return Conversation(
       id: id ?? this.id,
@@ -36,6 +41,7 @@ class Conversation {
       isPinned: isPinned ?? this.isPinned,
       heroAssetLabel: heroAssetLabel ?? this.heroAssetLabel,
       messages: messages ?? this.messages,
+      type: type ?? this.type,
     );
   }
 }

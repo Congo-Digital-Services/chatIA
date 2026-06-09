@@ -22,8 +22,8 @@ class AuthSession {
       accessToken: 'mock_access_token',
       refreshToken: 'mock_refresh_token',
       idToken: 'mock_id_token',
-      userName: 'cogwheel',
-      email: 'cogwheel@conduit.dev',
+      userName: 'Utilisateur',
+      email: 'utilisateur@conduit.dev',
       expiresAt: DateTime.now().add(const Duration(hours: 8)),
       isMock: true,
     );

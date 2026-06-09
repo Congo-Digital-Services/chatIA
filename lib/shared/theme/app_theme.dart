@@ -1,16 +1,41 @@
 import 'package:flutter/material.dart';
 
 class AppThemeColors {
-  static const background = Color(0xFFF8F8F5);
-  static const card = Color(0xFFFBFBF9);
-  static const cardStrong = Color(0xFFF1F1EE);
-  static const stroke = Color(0xFFE6E7E1);
-  static const pill = Color(0xFFF4F4F1);
-  static const pillSelected = Color(0xFFDEDEDA);
-  static const textStrong = Color(0xFF0E0E0E);
-  static const textSoft = Color(0xFF5F635B);
-  static const textMuted = Color(0xFF8C9087);
-  static const accent = Color(0xFF19B38D);
+  static Color background = const Color(0xFFFFFFFF);
+  static Color card = const Color(0xFFF8F8F8);
+  static Color cardStrong = const Color(0xFFF0F0F0);
+  static Color stroke = const Color(0xFFE5E5E5);
+  static Color pill = const Color(0xFFF4F4F4);
+  static Color pillSelected = const Color(0xFFE0E0E0);
+  static Color textStrong = const Color(0xFF0E0E0E);
+  static Color textSoft = const Color(0xFF5F635B);
+  static Color textMuted = const Color(0xFF8C9087);
+  static Color accent = const Color(0xFF19B38D);
+
+  static void update(bool isDark, Color activeAccent) {
+    accent = activeAccent;
+    if (isDark) {
+      background = const Color(0xFF121210);
+      card = const Color(0xFF1C1C19);
+      cardStrong = const Color(0xFF262623);
+      stroke = const Color(0xFF2C2D29);
+      pill = const Color(0xFF22221F);
+      pillSelected = const Color(0xFF383935);
+      textStrong = const Color(0xFFF5F5F0);
+      textSoft = const Color(0xFFACAFAB);
+      textMuted = const Color(0xFF767975);
+    } else {
+      background = const Color(0xFFFFFFFF);
+      card = const Color(0xFFF8F8F8);
+      cardStrong = const Color(0xFFF0F0F0);
+      stroke = const Color(0xFFE5E5E5);
+      pill = const Color(0xFFF4F4F4);
+      pillSelected = const Color(0xFFE0E0E0);
+      textStrong = const Color(0xFF0E0E0E);
+      textSoft = const Color(0xFF5F635B);
+      textMuted = const Color(0xFF8C9087);
+    }
+  }
 }
 
 class AppThemeShadows {
@@ -24,21 +49,23 @@ class AppThemeShadows {
 }
 
 class AppTheme {
-  static ThemeData light() {
+  static ThemeData build({required bool isDark, required Color accentColor}) {
+    AppThemeColors.update(isDark, accentColor);
+
     final base = ThemeData(
       useMaterial3: true,
-      brightness: Brightness.light,
+      brightness: isDark ? Brightness.dark : Brightness.light,
       fontFamily: 'Geist Sans',
       scaffoldBackgroundColor: AppThemeColors.background,
       colorScheme: ColorScheme.fromSeed(
         seedColor: AppThemeColors.accent,
-        brightness: Brightness.light,
+        brightness: isDark ? Brightness.dark : Brightness.light,
         surface: AppThemeColors.background,
       ),
     );
 
     return base.copyWith(
-      textTheme: const TextTheme(
+      textTheme: TextTheme(
         displaySmall: TextStyle(
           fontSize: 38,
           fontWeight: FontWeight.w700,
@@ -86,23 +113,23 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.88),
-        hintStyle: const TextStyle(color: AppThemeColors.textMuted),
+        fillColor: isDark ? Colors.black.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.88),
+        hintStyle: TextStyle(color: AppThemeColors.textMuted),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 18,
           vertical: 18,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(24),
-          borderSide: const BorderSide(color: AppThemeColors.stroke),
+          borderSide: BorderSide(color: AppThemeColors.stroke),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(24),
-          borderSide: const BorderSide(color: AppThemeColors.stroke),
+          borderSide: BorderSide(color: AppThemeColors.stroke),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(24),
-          borderSide: const BorderSide(color: AppThemeColors.accent, width: 1.4),
+          borderSide: BorderSide(color: AppThemeColors.accent, width: 1.4),
         ),
       ),
       cardTheme: CardThemeData(
@@ -110,12 +137,13 @@ class AppTheme {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28),
-          side: const BorderSide(color: AppThemeColors.stroke),
+          side: BorderSide(color: AppThemeColors.stroke),
         ),
       ),
       dividerColor: AppThemeColors.stroke,
     );
   }
 
-  static ThemeData dark() => light();
+  static ThemeData light() => build(isDark: false, accentColor: const Color(0xFF19B38D));
+  static ThemeData dark() => build(isDark: true, accentColor: const Color(0xFF19B38D));
 }

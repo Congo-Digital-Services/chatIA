@@ -16,72 +16,111 @@ class LoginPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authControllerProvider);
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     if (auth.isRestoring) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        backgroundColor: AppThemeColors.background,
+        body: Center(
+          child: CircularProgressIndicator(
+            color: AppThemeColors.accent,
+            strokeWidth: 2.5,
+          ),
+        ),
       );
     }
 
     return Scaffold(
+      backgroundColor: AppThemeColors.background,
       body: DecoratedBox(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFFF9F9F7), Color(0xFFF1F2EE)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+            colors: isDark
+                ? [const Color(0xFF161614), const Color(0xFF1C1C19)]
+                : [const Color(0xFFF9F9F7), const Color(0xFFEFF0EB)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
           ),
         ),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Spacer(),
+                const Spacer(flex: 2),
+                // Logo + nom
                 const ConduitLogo(),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
                 Text(
-                  'Conduit Mobile',
-                  style: theme.textTheme.displaySmall,
+                  'Conduit',
+                  style: theme.textTheme.displaySmall?.copyWith(
+                    letterSpacing: -1.5,
+                  ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 6),
                 Text(
-                  'Reproduction UI fidèle de Conduit/OpenWebUI, prête pour un SSO Keycloak.',
+                  'Votre assistant IA, partout avec vous.',
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: AppThemeColors.textSoft,
                     height: 1.45,
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 28),
+                // Carte d'authentification
                 ConduitCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // En-tête de la carte
                       Row(
                         children: [
-                          const Icon(CupertinoIcons.lock_shield),
-                          const SizedBox(width: 10),
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: AppThemeColors.pill,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              CupertinoIcons.lock_shield,
+                              size: 18,
+                              color: AppThemeColors.textSoft,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
                           Text(
                             'Authentification',
-                            style: theme.textTheme.titleLarge,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 14),
-                      Text(
-                        KeycloakConfig.isConfigured
-                            ? 'SSO Keycloak configuré, prêt pour Authorization Code Flow + PKCE.'
-                            : 'Mode maquette actif. Ajoute les constantes Keycloak pour basculer sur un vrai flux OIDC.',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: AppThemeColors.textSoft,
-                          height: 1.5,
+                      // Statut
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppThemeColors.pill,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          KeycloakConfig.isConfigured
+                              ? 'SSO Keycloak configuré — Authorization Code Flow + PKCE prêt.'
+                              : 'Mode maquette actif. Renseignez les constantes Keycloak pour activer le vrai flux OIDC.',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: AppThemeColors.textSoft,
+                            height: 1.5,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
+                      // Bouton connexion
                       ConduitPrimaryButton(
                         label: auth.isLoading
-                            ? 'Connexion en cours...'
+                            ? 'Connexion en cours…'
                             : 'Se connecter avec SSO',
                         icon: CupertinoIcons.arrow_right_circle_fill,
                         onPressed: auth.isLoading
@@ -90,32 +129,50 @@ class LoginPage extends ConsumerWidget {
                                 .read(authControllerProvider)
                                 .signInWithSso(),
                       ),
+                      // Message d'erreur
                       if (auth.errorMessage != null) ...[
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 12),
                         Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.all(14),
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: const Color(0xFFFFF2F1),
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: const Color(0xFFFFD4D1)),
                           ),
-                          child: Text(
-                            auth.errorMessage!,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: const Color(0xFF9A2C23),
-                            ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                CupertinoIcons.exclamationmark_circle,
+                                size: 16,
+                                color: Color(0xFF9A2C23),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  auth.errorMessage!,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: const Color(0xFF9A2C23),
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ],
                   ),
                 ),
-                const Spacer(),
-                Text(
-                  'Constantes prévues : keycloakBaseUrl, realm, clientId, redirectUri.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppThemeColors.textMuted,
+                const Spacer(flex: 3),
+                // Note de bas de page
+                Center(
+                  child: Text(
+                    'keycloakBaseUrl · realm · clientId · redirectUri',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppThemeColors.textMuted,
+                      letterSpacing: 0.2,
+                    ),
                   ),
                 ),
               ],

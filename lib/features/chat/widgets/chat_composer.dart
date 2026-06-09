@@ -1,9 +1,14 @@
+import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/services/audio_recorder.dart';
+import '../../../core/services/file_picker.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../providers/chat_state_provider.dart';
 
-class ChatComposer extends StatefulWidget {
+class ChatComposer extends ConsumerStatefulWidget {
   const ChatComposer({
     super.key,
     required this.onSend,
@@ -14,112 +19,509 @@ class ChatComposer extends StatefulWidget {
   final String userName;
 
   @override
-  State<ChatComposer> createState() => _ChatComposerState();
+  ConsumerState<ChatComposer> createState() => _ChatComposerState();
 }
 
-class _ChatComposerState extends State<ChatComposer> {
+class _ChatComposerState extends ConsumerState<ChatComposer>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _controller = TextEditingController();
+  late final AnimationController _sendAnim;
+  late final Animation<double> _sendScale;
+  late final Animation<double> _micOpacity;
+  
+  bool _hasText = false;
+  bool _isRecording = false;
+  int _recordDurationSeconds = 0;
+  Timer? _recordTimer;
+  PickedFileInfo? _attachedFile;
+
+  @override
+  void initState() {
+    super.initState();
+    _sendAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+    _sendScale = CurvedAnimation(parent: _sendAnim, curve: Curves.easeOutBack);
+    _micOpacity = Tween<double>(begin: 1, end: 0).animate(
+      CurvedAnimation(parent: _sendAnim, curve: Curves.easeIn),
+    );
+    _controller.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    final hasText = _controller.text.trim().isNotEmpty;
+    if (hasText != _hasText) {
+      setState(() => _hasText = hasText);
+      if (hasText) {
+        _sendAnim.forward();
+      } else {
+        _sendAnim.reverse();
+      }
+    }
+  }
 
   @override
   void dispose() {
+    _controller.removeListener(_onTextChanged);
     _controller.dispose();
+    _sendAnim.dispose();
+    _recordTimer?.cancel();
     super.dispose();
   }
 
   void _submit() {
-    final value = _controller.text;
+    final value = _controller.text.trim();
+    if (value.isEmpty && _attachedFile == null) return;
+    
     _controller.clear();
-    widget.onSend(value);
+    
+    if (_attachedFile != null) {
+      ref.read(chatControllerProvider).sendFileMessage(
+        value,
+        url: _attachedFile!.url,
+        name: _attachedFile!.name,
+        size: _attachedFile!.size,
+        isImage: _attachedFile!.isImage,
+      );
+      setState(() {
+        _attachedFile = null;
+      });
+    } else {
+      widget.onSend(value);
+    }
+  }
+
+  Future<void> _pickFile() async {
+    final info = await filePicker.pickFile();
+    if (info != null) {
+      setState(() {
+        _attachedFile = info;
+      });
+    }
+  }
+
+  void _startRecordingTimer() {
+    _recordDurationSeconds = 0;
+    _recordTimer?.cancel();
+    _recordTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() {
+        _recordDurationSeconds++;
+      });
+    });
+  }
+
+  void _stopRecordingTimer() {
+    _recordTimer?.cancel();
+    _recordTimer = null;
+  }
+
+  String _formatDuration(int seconds) {
+    final int minutes = seconds ~/ 60;
+    final int remainingSeconds = seconds % 60;
+    return '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _startRecording() async {
+    await audioRecorder.startRecording();
+    setState(() {
+      _isRecording = true;
+    });
+    _startRecordingTimer();
+  }
+
+  Future<void> _cancelRecording() async {
+    await audioRecorder.stopRecording();
+    _stopRecordingTimer();
+    setState(() {
+      _isRecording = false;
+      _recordDurationSeconds = 0;
+    });
+  }
+
+  Future<void> _sendRecording() async {
+    final durationText = _formatDuration(_recordDurationSeconds);
+    final url = await audioRecorder.stopRecording();
+    _stopRecordingTimer();
+    setState(() {
+      _isRecording = false;
+      _recordDurationSeconds = 0;
+    });
+    if (url != null) {
+      ref.read(chatControllerProvider).sendVoiceMessage(url, durationText);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
+          // Utilisateur en-tête
+          Padding(
+            padding: const EdgeInsets.only(left: 6, bottom: 8),
             child: Text(
               widget.userName,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: AppThemeColors.textMuted,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 0.1,
                   ),
             ),
           ),
-          const SizedBox(height: 10),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.92),
-              borderRadius: BorderRadius.circular(31),
-              boxShadow: AppThemeShadows.soft,
-              border: Border.all(color: AppThemeColors.stroke),
-            ),
-            child: Row(
-              children: [
-                const SizedBox(width: 6),
-                Material(
-                  color: AppThemeColors.pill,
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: () {},
-                    child: const SizedBox(
-                      width: 48,
-                      height: 48,
-                      child: Icon(CupertinoIcons.add, size: 28),
-                    ),
-                  ),
+          
+          // Pièce jointe aperçu
+          if (_attachedFile != null && !_isRecording)
+            Padding(
+              padding: const EdgeInsets.only(left: 6, bottom: 8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isDark ? AppThemeColors.cardStrong : const Color(0xFFF1F1EE),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppThemeColors.stroke),
                 ),
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    minLines: 1,
-                    maxLines: 4,
-                    decoration: InputDecoration(
-                      hintText: 'Ask Conduit',
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 16,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _attachedFile!.isImage
+                          ? CupertinoIcons.photo
+                          : CupertinoIcons.doc,
+                      size: 16,
+                      color: AppThemeColors.textSoft,
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        _attachedFile!.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: AppThemeColors.textStrong,
+                            ),
                       ),
-                      hintStyle: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w400,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _attachedFile!.size,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontSize: 10,
                             color: AppThemeColors.textMuted,
                           ),
                     ),
-                  ),
-                ),
-                IconButton(
-                  onPressed: () {},
-                  icon: const Icon(CupertinoIcons.mic, size: 32),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: GestureDetector(
-                    onTap: _submit,
-                    child: Container(
-                      width: 54,
-                      height: 54,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF111111),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        CupertinoIcons.waveform,
-                        color: Colors.white,
-                        size: 24,
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _attachedFile = null;
+                        });
+                      },
+                      child: Icon(
+                        CupertinoIcons.multiply,
+                        size: 14,
+                        color: AppThemeColors.textMuted,
                       ),
                     ),
-                  ),
+                  ],
+                ),
+              ),
+            ),
+
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            decoration: BoxDecoration(
+              color: isDark ? AppThemeColors.card : Colors.white.withValues(alpha: 0.96),
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.07),
+                  blurRadius: 24,
+                  offset: const Offset(0, 6),
                 ),
               ],
+              border: Border.all(
+                color: (_hasText || _attachedFile != null)
+                    ? AppThemeColors.accent.withValues(alpha: 0.5)
+                    : AppThemeColors.stroke,
+                width: (_hasText || _attachedFile != null) ? 1.5 : 1,
+              ),
             ),
+            child: _isRecording
+                ? Row(
+                    children: [
+                      const SizedBox(width: 16),
+                      const _BlinkingRedDot(),
+                      const SizedBox(width: 8),
+                      Text(
+                        _formatDuration(_recordDurationSeconds),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                      const Expanded(
+                        child: Center(child: _BouncingWaveform()),
+                      ),
+                      _ComposerIconBtn(
+                        icon: CupertinoIcons.trash,
+                        onTap: _cancelRecording,
+                        tooltip: 'Annuler',
+                      ),
+                      const SizedBox(width: 4),
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6, bottom: 6, top: 6),
+                        child: Material(
+                          color: AppThemeColors.textStrong,
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: _sendRecording,
+                            child: const SizedBox(
+                              width: 44,
+                              height: 44,
+                              child: Icon(
+                                CupertinoIcons.arrow_up,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      // Bouton + (attacher fichier)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 6, bottom: 6, top: 6),
+                        child: _ComposerIconBtn(
+                          icon: CupertinoIcons.add,
+                          onTap: _pickFile,
+                          tooltip: 'Joindre un fichier',
+                        ),
+                      ),
+                      // Champ de texte
+                      Expanded(
+                        child: TextField(
+                          controller: _controller,
+                          minLines: 1,
+                          maxLines: 5,
+                          textInputAction: TextInputAction.newline,
+                          decoration: InputDecoration(
+                            hintText: 'Message…',
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 14,
+                            ),
+                            hintStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                  color: AppThemeColors.textMuted,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                          ),
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                color: AppThemeColors.textStrong,
+                                height: 1.45,
+                              ),
+                        ),
+                      ),
+                      // Bouton micro — se cache quand on tape ou qu'il y a un fichier
+                      if (_controller.text.trim().isEmpty && _attachedFile == null)
+                        FadeTransition(
+                          opacity: _micOpacity,
+                          child: IgnorePointer(
+                            ignoring: _hasText || _attachedFile != null,
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 4, bottom: 6, top: 6),
+                              child: _ComposerIconBtn(
+                                icon: CupertinoIcons.mic,
+                                onTap: _startRecording,
+                                tooltip: 'Dicter',
+                              ),
+                            ),
+                          ),
+                        ),
+                      // Bouton Envoyer — apparaît quand on tape ou qu'il y a un fichier
+                      if (_controller.text.trim().isNotEmpty || _attachedFile != null)
+                        ScaleTransition(
+                          scale: _sendScale,
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 6, bottom: 6, top: 6),
+                            child: _SendButton(onTap: _submit),
+                          ),
+                        ),
+                    ],
+                  ),
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─── Bouton icône uniforme (44×44) dans le composer ──────────────────────────
+class _ComposerIconBtn extends StatelessWidget {
+  const _ComposerIconBtn({
+    required this.icon,
+    required this.onTap,
+    this.tooltip = '',
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: AppThemeColors.pill,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(icon, size: 22, color: AppThemeColors.textStrong),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Bouton Envoyer (flèche vers le haut, fond noir) ─────────────────────────
+class _SendButton extends StatelessWidget {
+  const _SendButton({required this.onTap});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppThemeColors.textStrong,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: const SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(
+            CupertinoIcons.arrow_up,
+            color: Colors.white,
+            size: 20,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Point rouge clignotant pour l'enregistrement ───────────────────────────
+class _BlinkingRedDot extends StatefulWidget {
+  const _BlinkingRedDot();
+
+  @override
+  State<_BlinkingRedDot> createState() => _BlinkingRedDotState();
+}
+
+class _BlinkingRedDotState extends State<_BlinkingRedDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _anim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _anim,
+      child: Container(
+        width: 10,
+        height: 10,
+        decoration: const BoxDecoration(
+          color: Colors.red,
+          shape: BoxShape.circle,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Onde vocale qui rebondit pour l'enregistrement ─────────────────────────
+class _BouncingWaveform extends StatefulWidget {
+  const _BouncingWaveform();
+
+  @override
+  State<_BouncingWaveform> createState() => _BouncingWaveformState();
+}
+
+class _BouncingWaveformState extends State<_BouncingWaveform>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _anim;
+  final List<double> _heights = [12, 24, 16, 30, 20, 26, 14, 18, 22, 10];
+
+  @override
+  void initState() {
+    super.initState();
+    _anim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (context, child) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(_heights.length, (index) {
+            final double value = _anim.value;
+            final double h = _heights[index] * (0.4 + 0.6 * value);
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              width: 3,
+              height: h,
+              decoration: BoxDecoration(
+                color: AppThemeColors.accent,
+                borderRadius: BorderRadius.circular(1.5),
+              ),
+            );
+          }),
+        );
+      },
     );
   }
 }
