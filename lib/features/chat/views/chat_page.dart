@@ -9,7 +9,6 @@ import '../../../shared/models/conversation.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/conduit_card.dart';
 import '../../../shared/widgets/conversation_drawer.dart';
-import '../../settings/providers/settings_provider.dart';
 import '../providers/chat_state_provider.dart';
 import '../widgets/chat_composer.dart';
 import '../widgets/message_bubble.dart';
@@ -91,7 +90,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                             height: 44,
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             decoration: BoxDecoration(
-                              color: isDark ? AppThemeColors.card : Colors.white.withValues(alpha: 0.88),
+                              color: isDark
+                                  ? AppThemeColors.card
+                                  : AppThemeColors.card.withValues(alpha: 0.96),
                               borderRadius: BorderRadius.circular(22),
                               border: Border.all(color: AppThemeColors.stroke),
                               boxShadow: AppThemeShadows.soft,
@@ -104,8 +105,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                   isChannel
                                       ? conversation.title
                                       : isNote
-                                          ? 'Bloc-notes'
-                                          : 'Kimi K2',
+                                      ? 'Bloc-notes'
+                                      : 'Kimi K2',
                                   style: theme.textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.w600,
                                     letterSpacing: -0.2,
@@ -140,15 +141,21 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       ],
                       // Nouvelle conversation / note
                       _HeaderButton(
-                        icon: isNote ? CupertinoIcons.doc_append : CupertinoIcons.square_pencil,
+                        icon: isNote
+                            ? CupertinoIcons.doc_append
+                            : CupertinoIcons.square_pencil,
                         onTap: () {
                           if (isNote) {
                             ref.read(chatControllerProvider).createNote();
                           } else {
-                            ref.read(chatControllerProvider).createConversation();
+                            ref
+                                .read(chatControllerProvider)
+                                .createConversation();
                           }
                         },
-                        tooltip: isNote ? 'Nouvelle note' : 'Nouvelle conversation',
+                        tooltip: isNote
+                            ? 'Nouvelle note'
+                            : 'Nouvelle conversation',
                       ),
                     ],
                   ),
@@ -161,30 +168,31 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           conversation: conversation,
                         )
                       : messages.isEmpty
-                          ? _EmptyState(theme: theme)
-                          : ListView.builder(
-                              controller: _scrollController,
-                              padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
-                              itemCount: messages.length +
-                                  (conversation.heroAssetLabel != null ? 1 : 0),
-                              itemBuilder: (context, index) {
-                                if (index < messages.length) {
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 16),
-                                    child: MessageBubble(message: messages[index]),
-                                  );
-                                }
-                                // Hero card
-                                return Column(
-                                  children: [
-                                    _HeroCard(theme: theme),
-                                    const SizedBox(height: 12),
-                                    const _InlineActionRow(),
-                                    const SizedBox(height: 24),
-                                  ],
-                                );
-                              },
-                            ),
+                      ? _EmptyState(theme: theme)
+                      : ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
+                          itemCount:
+                              messages.length +
+                              (conversation.heroAssetLabel != null ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            if (index < messages.length) {
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: MessageBubble(message: messages[index]),
+                              );
+                            }
+                            // Hero card
+                            return Column(
+                              children: [
+                                _HeroCard(theme: theme),
+                                const SizedBox(height: 12),
+                                const _InlineActionRow(),
+                                const SizedBox(height: 24),
+                              ],
+                            );
+                          },
+                        ),
                 ),
                 // ── Composer ─────────────────────────────────────────────────────
                 if (!isNote)
@@ -267,16 +275,14 @@ class _HeaderButton extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: isDark ? AppThemeColors.card : Colors.white.withValues(alpha: 0.88),
+        color: isDark
+            ? AppThemeColors.card
+            : AppThemeColors.card.withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(22),
         child: InkWell(
           borderRadius: BorderRadius.circular(22),
           onTap: onTap,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(icon, size: 22),
-          ),
+          child: SizedBox(width: 44, height: 44, child: Icon(icon, size: 22)),
         ),
       ),
     );
@@ -301,7 +307,11 @@ class _HeroCard extends StatelessWidget {
             decoration: const BoxDecoration(
               borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
               gradient: LinearGradient(
-                colors: [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)],
+                colors: [
+                  Color(0xFF1A1A2E),
+                  Color(0xFF16213E),
+                  Color(0xFF0F3460),
+                ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -366,11 +376,7 @@ class _InlineActionRow extends StatelessWidget {
           onTap: () {},
         ),
         const SizedBox(width: 8),
-        _ActionBtn(
-          icon: CupertinoIcons.share,
-          label: 'Partager',
-          onTap: () {},
-        ),
+        _ActionBtn(icon: CupertinoIcons.share, label: 'Partager', onTap: () {}),
       ],
     );
   }
@@ -393,7 +399,7 @@ class _ActionBtn extends StatelessWidget {
     return Tooltip(
       message: label,
       child: Material(
-        color: isDark ? AppThemeColors.cardStrong : const Color(0xFFF2F2EF),
+        color: isDark ? AppThemeColors.cardStrong : AppThemeColors.pill,
         borderRadius: BorderRadius.circular(22),
         child: InkWell(
           borderRadius: BorderRadius.circular(22),
@@ -446,7 +452,9 @@ class _NoteEditorState extends ConsumerState<_NoteEditor> {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: isDark ? AppThemeColors.card : Colors.white.withValues(alpha: 0.92),
+          color: isDark
+              ? AppThemeColors.card
+              : AppThemeColors.card.withValues(alpha: 0.98),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(color: AppThemeColors.stroke),
           boxShadow: AppThemeShadows.soft,
@@ -456,7 +464,11 @@ class _NoteEditorState extends ConsumerState<_NoteEditor> {
           children: [
             Row(
               children: [
-                Icon(CupertinoIcons.doc_text, size: 20, color: AppThemeColors.textSoft),
+                Icon(
+                  CupertinoIcons.doc_text,
+                  size: 20,
+                  color: AppThemeColors.textSoft,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   'Bloc-notes interactif',
@@ -473,15 +485,16 @@ class _NoteEditorState extends ConsumerState<_NoteEditor> {
                 controller: _controller,
                 maxLines: null,
                 keyboardType: TextInputType.multiline,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  height: 1.6,
-                ),
+                style: theme.textTheme.bodyLarge?.copyWith(height: 1.6),
                 decoration: const InputDecoration(
-                  hintText: 'Écrivez vos notes ici. La première ligne sera le titre...',
+                  hintText:
+                      'Écrivez vos notes ici. La première ligne sera le titre...',
                   border: InputBorder.none,
                 ),
                 onChanged: (text) {
-                  ref.read(chatControllerProvider).updateNoteContent(widget.conversation.id, text);
+                  ref
+                      .read(chatControllerProvider)
+                      .updateNoteContent(widget.conversation.id, text);
                 },
               ),
             ),
@@ -549,11 +562,7 @@ class _VoiceCallOverlayState extends State<_VoiceCallOverlay>
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            Color(0xFF0F0F1A),
-            Color(0xFF1B1B3A),
-            Color(0xFF0C1033),
-          ],
+          colors: [Color(0xFF0F0F1A), Color(0xFF1B1B3A), Color(0xFF0C1033)],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -599,7 +608,9 @@ class _VoiceCallOverlayState extends State<_VoiceCallOverlay>
                           height: 140,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: const Color(0xFF18B489).withValues(alpha: 0.18 * (2 - _pulseAnimation.value)),
+                            color: const Color(0xFF18B489).withValues(
+                              alpha: 0.18 * (2 - _pulseAnimation.value),
+                            ),
                           ),
                         ),
                       );
@@ -615,7 +626,9 @@ class _VoiceCallOverlayState extends State<_VoiceCallOverlay>
                           height: 120,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: const Color(0xFF18B489).withValues(alpha: 0.25 * (2 - _pulseAnimation.value)),
+                            color: const Color(0xFF18B489).withValues(
+                              alpha: 0.25 * (2 - _pulseAnimation.value),
+                            ),
                           ),
                         ),
                       );
@@ -668,7 +681,13 @@ class _VoiceCallOverlayState extends State<_VoiceCallOverlay>
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(24, (index) {
-                    final double height = 4.0 + (index % 4 == 0 ? 24.0 : index % 3 == 0 ? 16.0 : 8.0);
+                    final double height =
+                        4.0 +
+                        (index % 4 == 0
+                            ? 24.0
+                            : index % 3 == 0
+                            ? 16.0
+                            : 8.0);
                     return Container(
                       margin: const EdgeInsets.symmetric(horizontal: 2.5),
                       width: 3,
@@ -689,7 +708,9 @@ class _VoiceCallOverlayState extends State<_VoiceCallOverlay>
                 children: [
                   // Mic Mute Button
                   _CallControlBtn(
-                    icon: _isMuted ? CupertinoIcons.mic_slash : CupertinoIcons.mic,
+                    icon: _isMuted
+                        ? CupertinoIcons.mic_slash
+                        : CupertinoIcons.mic,
                     active: _isMuted,
                     onTap: () {
                       setState(() {
@@ -726,7 +747,9 @@ class _VoiceCallOverlayState extends State<_VoiceCallOverlay>
                   const SizedBox(width: 24),
                   // Speaker Button
                   _CallControlBtn(
-                    icon: _isSpeakerOn ? CupertinoIcons.volume_up : CupertinoIcons.volume_off,
+                    icon: _isSpeakerOn
+                        ? CupertinoIcons.volume_up
+                        : CupertinoIcons.volume_off,
                     active: !_isSpeakerOn,
                     onTap: () {
                       setState(() {
@@ -773,11 +796,7 @@ class _CallControlBtn extends StatelessWidget {
             color: active ? Colors.white24 : Colors.white10,
             border: Border.all(color: Colors.white24),
           ),
-          child: Icon(
-            icon,
-            color: Colors.white,
-            size: 20,
-          ),
+          child: Icon(icon, color: Colors.white, size: 20),
         ),
       ),
     );

@@ -29,11 +29,14 @@ class MessageBubble extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: Theme.of(context).brightness == Brightness.dark
                       ? AppThemeColors.cardStrong
-                      : const Color(0xFFEEEEEB),
+                      : AppThemeColors.pill,
                   borderRadius: BorderRadius.circular(22),
                 ),
                 child: Column(
@@ -109,7 +112,7 @@ class MessageBubble extends ConsumerWidget {
                     decoration: BoxDecoration(
                       color: Theme.of(context).brightness == Brightness.dark
                           ? AppThemeColors.cardStrong
-                          : Colors.white.withValues(alpha: 0.6),
+                          : AppThemeColors.card.withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: AppThemeColors.stroke),
                     ),
@@ -189,7 +192,9 @@ class _VoiceMessagePlayerState extends State<_VoiceMessagePlayer> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final btnBgColor = widget.isUser ? Colors.black87 : const Color(0xFFE2E3DE);
+    final btnBgColor = widget.isUser
+        ? Colors.black87
+        : AppThemeColors.pillSelected;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -222,14 +227,22 @@ class _VoiceMessagePlayerState extends State<_VoiceMessagePlayer> {
               child: Row(
                 children: List.generate(18, (index) {
                   final filled = (index / 18) <= _progress;
-                  final double barHeight = 4.0 + (index % 3 == 0 ? 8.0 : index % 2 == 0 ? 4.0 : 0.0);
+                  final double barHeight =
+                      4.0 +
+                      (index % 3 == 0
+                          ? 8.0
+                          : index % 2 == 0
+                          ? 4.0
+                          : 0.0);
                   return Container(
                     margin: const EdgeInsets.symmetric(horizontal: 1),
                     width: 2.5,
                     height: barHeight,
                     decoration: BoxDecoration(
-                      color: filled 
-                          ? (widget.isUser ? Colors.black87 : AppThemeColors.accent)
+                      color: filled
+                          ? (widget.isUser
+                                ? Colors.black87
+                                : AppThemeColors.accent)
                           : (widget.isUser ? Colors.black26 : Colors.black12),
                       borderRadius: BorderRadius.circular(1),
                     ),
@@ -242,7 +255,9 @@ class _VoiceMessagePlayerState extends State<_VoiceMessagePlayer> {
               _isPlaying ? 'Lecture…' : 'Message vocal',
               style: theme.textTheme.bodySmall?.copyWith(
                 fontSize: 10,
-                color: widget.isUser ? Colors.black54 : AppThemeColors.textMuted,
+                color: widget.isUser
+                    ? Colors.black54
+                    : AppThemeColors.textMuted,
               ),
             ),
           ],
@@ -292,7 +307,11 @@ class _FileMessageBlock extends StatelessWidget {
                       height: 150,
                       color: Colors.black12,
                       child: const Center(
-                        child: Icon(CupertinoIcons.photo, size: 36, color: Colors.grey),
+                        child: Icon(
+                          CupertinoIcons.photo,
+                          size: 36,
+                          color: Colors.grey,
+                        ),
                       ),
                     );
                   },
@@ -330,14 +349,18 @@ class _FileMessageBlock extends StatelessWidget {
         decoration: BoxDecoration(
           color: Theme.of(context).brightness == Brightness.dark
               ? AppThemeColors.cardStrong
-              : Colors.white.withValues(alpha: 0.6),
+              : AppThemeColors.card.withValues(alpha: 0.92),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: AppThemeColors.stroke),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(CupertinoIcons.doc_text_fill, size: 28, color: AppThemeColors.textSoft),
+            Icon(
+              CupertinoIcons.doc_text_fill,
+              size: 28,
+              color: AppThemeColors.textSoft,
+            ),
             const SizedBox(width: 10),
             Flexible(
               child: Column(
@@ -364,7 +387,11 @@ class _FileMessageBlock extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
-            Icon(CupertinoIcons.arrow_down_to_line, size: 16, color: AppThemeColors.textSoft),
+            Icon(
+              CupertinoIcons.arrow_down_to_line,
+              size: 16,
+              color: AppThemeColors.textSoft,
+            ),
           ],
         ),
       ),

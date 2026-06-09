@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-final settingsControllerProvider = ChangeNotifierProvider<SettingsController>((ref) {
+final settingsControllerProvider = ChangeNotifierProvider<SettingsController>((
+  ref,
+) {
   return SettingsController()..loadFromPrefs();
 });
 
@@ -10,7 +12,8 @@ class SettingsController extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.light;
   Color _accentColor = const Color(0xFF18B489);
   String _language = 'fr';
-  String _shortcutAction = 'none'; // 'none', 'voice_call', 'file_picker', 'create_note', 'new_chat'
+  String _shortcutAction =
+      'none'; // 'none', 'voice_call', 'file_picker', 'create_note', 'new_chat'
   String _voiceEngine = 'local'; // 'local', 'server'
 
   ThemeMode get themeMode => _themeMode;
@@ -27,8 +30,8 @@ class SettingsController extends ChangeNotifier {
       _themeMode = themeStr == 'dark'
           ? ThemeMode.dark
           : themeStr == 'system'
-              ? ThemeMode.system
-              : ThemeMode.light;
+          ? ThemeMode.system
+          : ThemeMode.light;
       final accentVal = prefs.getInt('accentColor');
       if (accentVal != null) {
         _accentColor = Color(accentVal);
@@ -48,10 +51,10 @@ class SettingsController extends ChangeNotifier {
       final themeStr = _themeMode == ThemeMode.dark
           ? 'dark'
           : _themeMode == ThemeMode.system
-              ? 'system'
-              : 'light';
+          ? 'system'
+          : 'light';
       await prefs.setString('themeMode', themeStr);
-      await prefs.setInt('accentColor', _accentColor.value);
+      await prefs.setInt('accentColor', _accentColor.toARGB32());
       await prefs.setString('language', _language);
       await prefs.setString('shortcutAction', _shortcutAction);
       await prefs.setString('voiceEngine', _voiceEngine);
@@ -98,8 +101,7 @@ class SettingsController extends ChangeNotifier {
   }
 
   /// Native display name for the given language code.
-  static String languageName(String code) =>
-      supportedLanguages[code] ?? code;
+  static String languageName(String code) => supportedLanguages[code] ?? code;
 }
 
 // ─── Langues supportées (15 les plus parlées) ────────────────────────────────
@@ -147,11 +149,13 @@ const Map<String, Map<String, String>> localizations = {
     'recognition_engine': 'Moteur de reconnaissance',
     'local_device': 'Sur l\'appareil',
     'server': 'Serveur',
-    'voice_note': 'Audio traité localement sur l\'appareil. La dictée nécessite que la reconnaissance vocale sur appareil soit disponible.',
+    'voice_note':
+        'Audio traité localement sur l\'appareil. La dictée nécessite que la reconnaissance vocale sur appareil soit disponible.',
     'profile': 'Profil',
     'session': 'Session',
     'sign_out': 'Se déconnecter',
-    'session_mock': 'Connexion simulée active. Renseignez les constantes Keycloak pour activer le vrai flux SSO.',
+    'session_mock':
+        'Connexion simulée active. Renseignez les constantes Keycloak pour activer le vrai flux SSO.',
     'session_keycloak': 'Connecté via Keycloak.',
     'menu': 'Menu',
     'voice_call_ai': 'Appel vocal IA',
@@ -206,11 +210,13 @@ const Map<String, Map<String, String>> localizations = {
     'recognition_engine': 'Recognition engine',
     'local_device': 'On device',
     'server': 'Server',
-    'voice_note': 'Audio processed locally on device. Dictation requires on-device voice recognition to be available.',
+    'voice_note':
+        'Audio processed locally on device. Dictation requires on-device voice recognition to be available.',
     'profile': 'Profile',
     'session': 'Session',
     'sign_out': 'Log out',
-    'session_mock': 'Mock connection active. Fill Keycloak constants to enable real SSO flow.',
+    'session_mock':
+        'Mock connection active. Fill Keycloak constants to enable real SSO flow.',
     'session_keycloak': 'Connected via Keycloak.',
     'menu': 'Menu',
     'voice_call_ai': 'AI Voice Call',
@@ -265,11 +271,13 @@ const Map<String, Map<String, String>> localizations = {
     'recognition_engine': 'Motor de reconocimiento',
     'local_device': 'En el dispositivo',
     'server': 'Servidor',
-    'voice_note': 'Audio procesado localmente en el dispositivo. El dictado requiere que la reconocimiento de voz esté disponible.',
+    'voice_note':
+        'Audio procesado localmente en el dispositivo. El dictado requiere que la reconocimiento de voz esté disponible.',
     'profile': 'Perfil',
     'session': 'Sesión',
     'sign_out': 'Cerrar sesión',
-    'session_mock': 'Conexión simulada activa. Rellene las constantes de Keycloak para activar el flujo SSO real.',
+    'session_mock':
+        'Conexión simulada activa. Rellene las constantes de Keycloak para activar el flujo SSO real.',
     'session_keycloak': 'Conectado a través de Keycloak.',
     'menu': 'Menú',
     'voice_call_ai': 'Llamada de voz IA',
@@ -299,5 +307,5 @@ const Map<String, Map<String, String>> localizations = {
     'light': 'Claro',
     'dark': 'Oscuro',
     'system': 'Sistema',
-  }
+  },
 };

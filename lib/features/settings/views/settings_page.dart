@@ -27,13 +27,17 @@ class SettingsPage extends ConsumerWidget {
       context: context,
       builder: (ctx) {
         final theme = Theme.of(ctx);
-        final isDark = theme.brightness == Brightness.dark;
         return AlertDialog(
-          backgroundColor: isDark ? AppThemeColors.card : const Color(0xFFFFFFFF),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          title: Text(title,
-              style: theme.textTheme.titleLarge
-                  ?.copyWith(color: AppThemeColors.textStrong)),
+          backgroundColor: AppThemeColors.card,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          title: Text(
+            title,
+            style: theme.textTheme.titleLarge?.copyWith(
+              color: AppThemeColors.textStrong,
+            ),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: List.generate(values.length, (index) {
@@ -48,8 +52,10 @@ class SettingsPage extends ConsumerWidget {
                     Navigator.of(ctx).pop();
                   },
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
                     margin: const EdgeInsets.only(bottom: 4),
                     decoration: BoxDecoration(
                       color: isSelected
@@ -58,17 +64,22 @@ class SettingsPage extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(14),
                       border: isSelected
                           ? Border.all(
-                              color: AppThemeColors.accent.withValues(alpha: 0.4))
+                              color: AppThemeColors.accent.withValues(
+                                alpha: 0.4,
+                              ),
+                            )
                           : null,
                     ),
                     child: Row(
                       children: [
                         if (icons != null) ...[
-                          Icon(icons[index],
-                              size: 20,
-                              color: isSelected
-                                  ? AppThemeColors.accent
-                                  : AppThemeColors.textSoft),
+                          Icon(
+                            icons[index],
+                            size: 20,
+                            color: isSelected
+                                ? AppThemeColors.accent
+                                : AppThemeColors.textSoft,
+                          ),
                           const SizedBox(width: 12),
                         ],
                         Expanded(
@@ -85,8 +96,11 @@ class SettingsPage extends ConsumerWidget {
                           ),
                         ),
                         if (isSelected)
-                          Icon(Icons.check_circle_rounded,
-                              color: AppThemeColors.accent, size: 20),
+                          Icon(
+                            Icons.check_circle_rounded,
+                            color: AppThemeColors.accent,
+                            size: 20,
+                          ),
                       ],
                     ),
                   ),
@@ -196,9 +210,7 @@ class SettingsPage extends ConsumerWidget {
                   height: 44,
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   decoration: BoxDecoration(
-                    color: isDark
-                        ? AppThemeColors.card
-                        : Colors.white,
+                    color: AppThemeColors.card,
                     borderRadius: BorderRadius.circular(22),
                     border: Border.all(color: AppThemeColors.stroke),
                     boxShadow: AppThemeShadows.soft,
@@ -240,8 +252,8 @@ class SettingsPage extends ConsumerWidget {
               subtitle: getLanguageSubtitle() == 'Français'
                   ? 'Palette active'
                   : getLanguageSubtitle() == 'Español'
-                      ? 'Paleta activa'
-                      : 'Active palette',
+                  ? 'Paleta activa'
+                  : 'Active palette',
               palette: paletteColors,
               selectedColor: settings.accentColor,
               onPaletteColorSelected: (color) => settings.setAccentColor(color),
@@ -261,7 +273,7 @@ class SettingsPage extends ConsumerWidget {
                     'voice_call',
                     'file_picker',
                     'create_note',
-                    'new_chat'
+                    'new_chat',
                   ],
                   displayNames: [
                     settings.translate('shortcut_none'),
@@ -310,7 +322,7 @@ class SettingsPage extends ConsumerWidget {
                   : settings.translate('server'),
               segmentedValues: [
                 settings.translate('local_device'),
-                settings.translate('server')
+                settings.translate('server'),
               ],
               selectedSegmentIndex: settings.voiceEngine == 'local' ? 0 : 1,
               onSegmentChanged: (idx) {
@@ -331,7 +343,7 @@ class SettingsPage extends ConsumerWidget {
                     radius: 32,
                     backgroundColor: isDark
                         ? AppThemeColors.pillSelected
-                        : const Color(0xFFE2E3DE),
+                        : AppThemeColors.pill,
                     child: Text(
                       (user?.userName ?? 'U').substring(0, 1).toUpperCase(),
                       style: theme.textTheme.titleLarge?.copyWith(
@@ -455,7 +467,7 @@ class _ThemeSegmentTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: isDark
             ? Colors.black.withValues(alpha: 0.24)
-            : Colors.white,
+            : AppThemeColors.card.withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppThemeColors.stroke),
       ),
@@ -470,27 +482,34 @@ class _ThemeSegmentTile extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: isDark
                       ? AppThemeColors.pillSelected
-                      : const Color(0xFFEEEEEB),
+                      : AppThemeColors.pill,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(CupertinoIcons.moon_stars,
-                    size: 20, color: AppThemeColors.textStrong),
+                child: Icon(
+                  CupertinoIcons.moon_stars,
+                  size: 20,
+                  color: AppThemeColors.textStrong,
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(label,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: AppThemeColors.textStrong,
-                        )),
+                    Text(
+                      label,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: AppThemeColors.textStrong,
+                      ),
+                    ),
                     const SizedBox(height: 4),
-                    Text(subtitle,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: AppThemeColors.textSoft,
-                        )),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppThemeColors.textSoft,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -500,7 +519,7 @@ class _ThemeSegmentTile extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: isDark ? AppThemeColors.pill : const Color(0xFFDFE0DC),
+              color: AppThemeColors.pill,
               borderRadius: BorderRadius.circular(18),
             ),
             child: Row(
@@ -514,7 +533,9 @@ class _ThemeSegmentTile extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
                         color: isSelected
-                            ? (isDark ? AppThemeColors.pillSelected : Colors.white)
+                            ? (isDark
+                                  ? AppThemeColors.pillSelected
+                                  : AppThemeColors.card)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: isSelected && !isDark
@@ -523,7 +544,7 @@ class _ThemeSegmentTile extends StatelessWidget {
                                   color: Colors.black.withValues(alpha: 0.06),
                                   blurRadius: 4,
                                   offset: const Offset(0, 2),
-                                )
+                                ),
                               ]
                             : null,
                       ),
@@ -584,7 +605,9 @@ class _LanguageDropdownTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
-        color: isDark ? Colors.black.withValues(alpha: 0.24) : Colors.white,
+        color: isDark
+            ? Colors.black.withValues(alpha: 0.24)
+            : AppThemeColors.card.withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppThemeColors.stroke),
       ),
@@ -595,13 +618,14 @@ class _LanguageDropdownTile extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: isDark
-                  ? AppThemeColors.pillSelected
-                  : const Color(0xFFF4F4F4),
+              color: isDark ? AppThemeColors.pillSelected : AppThemeColors.pill,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(CupertinoIcons.globe,
-                size: 20, color: AppThemeColors.textStrong),
+            child: Icon(
+              CupertinoIcons.globe,
+              size: 20,
+              color: AppThemeColors.textStrong,
+            ),
           ),
           const SizedBox(width: 16),
           // Label + Dropdown
@@ -621,8 +645,12 @@ class _LanguageDropdownTile extends StatelessWidget {
                   child: DropdownButton<String>(
                     value: settings.language,
                     isExpanded: true,
-                    icon: Icon(CupertinoIcons.chevron_down, size: 16, color: AppThemeColors.textSoft),
-                    dropdownColor: isDark ? AppThemeColors.card : Colors.white,
+                    icon: Icon(
+                      CupertinoIcons.chevron_down,
+                      size: 16,
+                      color: AppThemeColors.textSoft,
+                    ),
+                    dropdownColor: AppThemeColors.card,
                     borderRadius: BorderRadius.circular(14),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: AppThemeColors.accent,
@@ -639,7 +667,9 @@ class _LanguageDropdownTile extends StatelessWidget {
                         child: Text(
                           supportedLanguages[code]!,
                           style: theme.textTheme.bodyMedium?.copyWith(
-                            color: settings.language == code ? AppThemeColors.accent : AppThemeColors.textStrong,
+                            color: settings.language == code
+                                ? AppThemeColors.accent
+                                : AppThemeColors.textStrong,
                           ),
                         ),
                       );
@@ -696,7 +726,7 @@ class _SettingsHeaderBtn extends StatelessWidget {
       child: Material(
         color: isDark
             ? AppThemeColors.card
-            : Colors.white.withValues(alpha: 0.88),
+            : AppThemeColors.card.withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(22),
         child: InkWell(
           borderRadius: BorderRadius.circular(22),

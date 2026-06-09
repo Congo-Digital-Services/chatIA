@@ -11,10 +11,7 @@ import '../theme/app_theme.dart';
 enum _DrawerTab { chats, notes, canaux }
 
 class ConduitConversationDrawer extends ConsumerStatefulWidget {
-  const ConduitConversationDrawer({
-    super.key,
-    required this.onSettingsTap,
-  });
+  const ConduitConversationDrawer({super.key, required this.onSettingsTap});
 
   final VoidCallback onSettingsTap;
 
@@ -55,7 +52,9 @@ class _ConduitConversationDrawerState
               Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: isDark ? AppThemeColors.card : Colors.white.withValues(alpha: 0.7),
+                  color: isDark
+                      ? AppThemeColors.card
+                      : AppThemeColors.card.withValues(alpha: 0.92),
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(color: AppThemeColors.stroke),
                 ),
@@ -98,7 +97,9 @@ class _ConduitConversationDrawerState
                       child: Container(
                         height: 44,
                         decoration: BoxDecoration(
-                          color: isDark ? AppThemeColors.cardStrong : Colors.white.withValues(alpha: 0.88),
+                          color: isDark
+                              ? AppThemeColors.cardStrong
+                              : AppThemeColors.card,
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(color: AppThemeColors.stroke),
                         ),
@@ -124,11 +125,13 @@ class _ConduitConversationDrawerState
                                   border: InputBorder.none,
                                   enabledBorder: InputBorder.none,
                                   focusedBorder: InputBorder.none,
-                                  contentPadding:
-                                      const EdgeInsets.symmetric(vertical: 0),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    vertical: 0,
+                                  ),
                                   hintStyle: theme.textTheme.bodySmall
                                       ?.copyWith(
-                                          color: AppThemeColors.textMuted),
+                                        color: AppThemeColors.textMuted,
+                                      ),
                                   isDense: true,
                                 ),
                               ),
@@ -142,9 +145,7 @@ class _ConduitConversationDrawerState
                       icon: CupertinoIcons.square_pencil,
                       tooltip: 'Nouvelle conversation',
                       onTap: () {
-                        ref
-                            .read(chatControllerProvider)
-                            .createConversation();
+                        ref.read(chatControllerProvider).createConversation();
                         Navigator.of(context).maybePop();
                       },
                     ),
@@ -166,15 +167,17 @@ class _ConduitConversationDrawerState
                         }),
                       )
                     : _activeTab == _DrawerTab.notes
-                        ? const _NotesContent()
-                        : const _ChannelsContent(),
+                    ? const _NotesContent()
+                    : const _ChannelsContent(),
               ),
 
               // ── Profil ───────────────────────────────────────────────────
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: isDark ? AppThemeColors.card : Colors.white.withValues(alpha: 0.9),
+                  color: isDark
+                      ? AppThemeColors.card
+                      : AppThemeColors.card.withValues(alpha: 0.96),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: AppThemeColors.stroke),
                   boxShadow: AppThemeShadows.soft,
@@ -183,7 +186,9 @@ class _ConduitConversationDrawerState
                   children: [
                     CircleAvatar(
                       radius: 20,
-                      backgroundColor: isDark ? AppThemeColors.pillSelected : const Color(0xFFE2E3DE),
+                      backgroundColor: isDark
+                          ? AppThemeColors.pillSelected
+                          : AppThemeColors.pill,
                       child: Text(
                         displayName.substring(0, 1).toUpperCase(),
                         style: theme.textTheme.titleMedium?.copyWith(
@@ -257,9 +262,7 @@ class _ChatsContent extends ConsumerWidget {
         .toList();
 
     // Filter recent conversations: chats, not pinned, no folder
-    final recentNoFolder = recent
-        .where((c) => c.folder.isEmpty)
-        .toList();
+    final recentNoFolder = recent.where((c) => c.folder.isEmpty).toList();
 
     return ListView(
       padding: EdgeInsets.zero,
@@ -280,7 +283,10 @@ class _ChatsContent extends ConsumerWidget {
             _FolderTile(
               label: folder,
               count: chat.conversations
-                  .where((c) => c.type == ConversationType.chat && c.folder == folder)
+                  .where(
+                    (c) =>
+                        c.type == ConversationType.chat && c.folder == folder,
+                  )
                   .length,
               expanded: expandedFolders[folder] ?? false,
               onTap: () => onFolderToggle(folder),
@@ -291,11 +297,18 @@ class _ChatsContent extends ConsumerWidget {
               alignment: Alignment.topCenter,
               child: (expandedFolders[folder] ?? false)
                   ? Padding(
-                      padding: const EdgeInsets.only(left: 14, top: 4, bottom: 8),
+                      padding: const EdgeInsets.only(
+                        left: 14,
+                        top: 4,
+                        bottom: 8,
+                      ),
                       child: Column(
                         children: [
-                          for (final conv in chat.conversations.where((c) =>
-                              c.type == ConversationType.chat && c.folder == folder))
+                          for (final conv in chat.conversations.where(
+                            (c) =>
+                                c.type == ConversationType.chat &&
+                                c.folder == folder,
+                          ))
                             _ConversationTile(conversation: conv),
                         ],
                       ),
@@ -311,7 +324,8 @@ class _ChatsContent extends ConsumerWidget {
         if (recentNoFolder.isNotEmpty) ...[
           _SectionHeader(label: 'Récentes', count: recentNoFolder.length),
           const SizedBox(height: 6),
-          for (final conv in recentNoFolder) _ConversationTile(conversation: conv),
+          for (final conv in recentNoFolder)
+            _ConversationTile(conversation: conv),
         ],
       ],
     );
@@ -341,7 +355,9 @@ class _NotesContent extends ConsumerWidget {
                 icon: const Icon(CupertinoIcons.plus, size: 16),
                 label: const Text('Nouvelle Note'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: isDark ? AppThemeColors.cardStrong : Colors.white,
+                  backgroundColor: isDark
+                      ? AppThemeColors.cardStrong
+                      : AppThemeColors.card,
                   foregroundColor: AppThemeColors.textStrong,
                   elevation: 0,
                   shadowColor: Colors.transparent,
@@ -396,7 +412,9 @@ class _ChannelsContent extends ConsumerWidget {
                 icon: const Icon(CupertinoIcons.plus, size: 16),
                 label: const Text('Nouveau Canal'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: isDark ? AppThemeColors.cardStrong : Colors.white,
+                  backgroundColor: isDark
+                      ? AppThemeColors.cardStrong
+                      : AppThemeColors.card,
                   foregroundColor: AppThemeColors.textStrong,
                   elevation: 0,
                   shadowColor: Colors.transparent,
@@ -493,9 +511,9 @@ class _EmptyTabContent extends StatelessWidget {
           Text(
             label,
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppThemeColors.textSoft,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppThemeColors.textSoft),
           ),
         ],
       ),
@@ -530,11 +548,11 @@ class _TopTab extends StatelessWidget {
           label,
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                color: selected
-                    ? AppThemeColors.textStrong
-                    : AppThemeColors.textSoft,
-              ),
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            color: selected
+                ? AppThemeColors.textStrong
+                : AppThemeColors.textSoft,
+          ),
         ),
       ),
     );
@@ -554,23 +572,25 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
         children: [
-          Icon(CupertinoIcons.chevron_down,
-              size: 12, color: AppThemeColors.textMuted),
+          Icon(
+            CupertinoIcons.chevron_down,
+            size: 12,
+            color: AppThemeColors.textMuted,
+          ),
           const SizedBox(width: 6),
           Text(
             label.toUpperCase(),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: AppThemeColors.textMuted,
-                  letterSpacing: 0.6,
-                  fontSize: 10,
-                ),
+              fontWeight: FontWeight.w700,
+              color: AppThemeColors.textMuted,
+              letterSpacing: 0.6,
+              fontSize: 10,
+            ),
           ),
           if (count != null) ...[
             const SizedBox(width: 6),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
               decoration: BoxDecoration(
                 color: AppThemeColors.pill,
                 borderRadius: BorderRadius.circular(6),
@@ -578,9 +598,9 @@ class _SectionHeader extends StatelessWidget {
               child: Text(
                 '$count',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppThemeColors.textSoft,
-                      fontSize: 10,
-                    ),
+                  color: AppThemeColors.textSoft,
+                  fontSize: 10,
+                ),
               ),
             ),
           ],
@@ -608,34 +628,37 @@ class _FolderTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Material(
-      color: isDark ? AppThemeColors.card : Colors.white.withValues(alpha: 0.76),
+      color: isDark
+          ? AppThemeColors.card
+          : AppThemeColors.card.withValues(alpha: 0.92),
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: onTap,
         child: Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: AppThemeColors.stroke),
           ),
           child: Row(
             children: [
-              Icon(CupertinoIcons.folder,
-                  size: 18, color: AppThemeColors.textSoft),
+              Icon(
+                CupertinoIcons.folder,
+                size: 18,
+                color: AppThemeColors.textSoft,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   label,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
                   color: AppThemeColors.pill,
                   borderRadius: BorderRadius.circular(7),
@@ -643,8 +666,8 @@ class _FolderTile extends StatelessWidget {
                 child: Text(
                   '$count',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppThemeColors.textSoft,
-                      ),
+                    color: AppThemeColors.textSoft,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -684,14 +707,11 @@ class _ConversationTile extends ConsumerWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: () {
-            ref
-                .read(chatControllerProvider)
-                .selectConversation(conversation);
+            ref.read(chatControllerProvider).selectConversation(conversation);
             Navigator.of(context).maybePop();
           },
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               children: [
                 Expanded(
@@ -700,26 +720,26 @@ class _ConversationTile extends ConsumerWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: isSelected
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                          color: isSelected
-                              ? AppThemeColors.textStrong
-                              : AppThemeColors.textSoft,
-                        ),
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                      color: isSelected
+                          ? AppThemeColors.textStrong
+                          : AppThemeColors.textSoft,
+                    ),
                   ),
                 ),
                 if (conversation.type == ConversationType.chat) ...[
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () {
-                      ref
-                          .read(chatControllerProvider)
-                          .togglePin(conversation);
+                      ref.read(chatControllerProvider).togglePin(conversation);
                     },
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 2),
+                        horizontal: 4,
+                        vertical: 2,
+                      ),
                       child: Icon(
                         conversation.isPinned
                             ? CupertinoIcons.pin_fill
@@ -742,7 +762,9 @@ class _ConversationTile extends ConsumerWidget {
                   },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 4, vertical: 2),
+                      horizontal: 4,
+                      vertical: 2,
+                    ),
                     child: Icon(
                       CupertinoIcons.trash,
                       size: 13,

@@ -9,11 +9,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../providers/chat_state_provider.dart';
 
 class ChatComposer extends ConsumerStatefulWidget {
-  const ChatComposer({
-    super.key,
-    required this.onSend,
-    required this.userName,
-  });
+  const ChatComposer({super.key, required this.onSend, required this.userName});
 
   final ValueChanged<String> onSend;
   final String userName;
@@ -28,7 +24,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
   late final AnimationController _sendAnim;
   late final Animation<double> _sendScale;
   late final Animation<double> _micOpacity;
-  
+
   bool _hasText = false;
   bool _isRecording = false;
   int _recordDurationSeconds = 0;
@@ -43,9 +39,10 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
       duration: const Duration(milliseconds: 200),
     );
     _sendScale = CurvedAnimation(parent: _sendAnim, curve: Curves.easeOutBack);
-    _micOpacity = Tween<double>(begin: 1, end: 0).animate(
-      CurvedAnimation(parent: _sendAnim, curve: Curves.easeIn),
-    );
+    _micOpacity = Tween<double>(
+      begin: 1,
+      end: 0,
+    ).animate(CurvedAnimation(parent: _sendAnim, curve: Curves.easeIn));
     _controller.addListener(_onTextChanged);
   }
 
@@ -73,17 +70,19 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
   void _submit() {
     final value = _controller.text.trim();
     if (value.isEmpty && _attachedFile == null) return;
-    
+
     _controller.clear();
-    
+
     if (_attachedFile != null) {
-      ref.read(chatControllerProvider).sendFileMessage(
-        value,
-        url: _attachedFile!.url,
-        name: _attachedFile!.name,
-        size: _attachedFile!.size,
-        isImage: _attachedFile!.isImage,
-      );
+      ref
+          .read(chatControllerProvider)
+          .sendFileMessage(
+            value,
+            url: _attachedFile!.url,
+            name: _attachedFile!.name,
+            size: _attachedFile!.size,
+            isImage: _attachedFile!.isImage,
+          );
       setState(() {
         _attachedFile = null;
       });
@@ -167,21 +166,26 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
             child: Text(
               widget.userName,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppThemeColors.textMuted,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: 0.1,
-                  ),
+                color: AppThemeColors.textMuted,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0.1,
+              ),
             ),
           ),
-          
+
           // Pièce jointe aperçu
           if (_attachedFile != null && !_isRecording)
             Padding(
               padding: const EdgeInsets.only(left: 6, bottom: 8),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
-                  color: isDark ? AppThemeColors.cardStrong : const Color(0xFFF1F1EE),
+                  color: isDark
+                      ? AppThemeColors.cardStrong
+                      : AppThemeColors.pill,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: AppThemeColors.stroke),
                 ),
@@ -202,18 +206,18 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: AppThemeColors.textStrong,
-                            ),
+                          fontWeight: FontWeight.w600,
+                          color: AppThemeColors.textStrong,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Text(
                       _attachedFile!.size,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            fontSize: 10,
-                            color: AppThemeColors.textMuted,
-                          ),
+                        fontSize: 10,
+                        color: AppThemeColors.textMuted,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     GestureDetector(
@@ -236,7 +240,9 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
           AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             decoration: BoxDecoration(
-              color: isDark ? AppThemeColors.card : Colors.white.withValues(alpha: 0.96),
+              color: isDark
+                  ? AppThemeColors.card
+                  : AppThemeColors.card.withValues(alpha: 0.98),
               borderRadius: BorderRadius.circular(28),
               boxShadow: [
                 BoxShadow(
@@ -261,12 +267,10 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                       Text(
                         _formatDuration(_recordDurationSeconds),
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                      const Expanded(
-                        child: Center(child: _BouncingWaveform()),
-                      ),
+                      const Expanded(child: Center(child: _BouncingWaveform())),
                       _ComposerIconBtn(
                         icon: CupertinoIcons.trash,
                         onTap: _cancelRecording,
@@ -274,7 +278,11 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                       ),
                       const SizedBox(width: 4),
                       Padding(
-                        padding: const EdgeInsets.only(right: 6, bottom: 6, top: 6),
+                        padding: const EdgeInsets.only(
+                          right: 6,
+                          bottom: 6,
+                          top: 6,
+                        ),
                         child: Material(
                           color: AppThemeColors.textStrong,
                           shape: const CircleBorder(),
@@ -300,7 +308,11 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                     children: [
                       // Bouton + (attacher fichier)
                       Padding(
-                        padding: const EdgeInsets.only(left: 6, bottom: 6, top: 6),
+                        padding: const EdgeInsets.only(
+                          left: 6,
+                          bottom: 6,
+                          top: 6,
+                        ),
                         child: _ComposerIconBtn(
                           icon: CupertinoIcons.add,
                           onTap: _pickFile,
@@ -323,25 +335,32 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                               horizontal: 10,
                               vertical: 14,
                             ),
-                            hintStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            hintStyle: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(
                                   color: AppThemeColors.textMuted,
                                   fontWeight: FontWeight.w400,
                                 ),
                           ),
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(
                                 color: AppThemeColors.textStrong,
                                 height: 1.45,
                               ),
                         ),
                       ),
                       // Bouton micro — se cache quand on tape ou qu'il y a un fichier
-                      if (_controller.text.trim().isEmpty && _attachedFile == null)
+                      if (_controller.text.trim().isEmpty &&
+                          _attachedFile == null)
                         FadeTransition(
                           opacity: _micOpacity,
                           child: IgnorePointer(
                             ignoring: _hasText || _attachedFile != null,
                             child: Padding(
-                              padding: const EdgeInsets.only(right: 4, bottom: 6, top: 6),
+                              padding: const EdgeInsets.only(
+                                right: 4,
+                                bottom: 6,
+                                top: 6,
+                              ),
                               child: _ComposerIconBtn(
                                 icon: CupertinoIcons.mic,
                                 onTap: _startRecording,
@@ -351,11 +370,16 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                           ),
                         ),
                       // Bouton Envoyer — apparaît quand on tape ou qu'il y a un fichier
-                      if (_controller.text.trim().isNotEmpty || _attachedFile != null)
+                      if (_controller.text.trim().isNotEmpty ||
+                          _attachedFile != null)
                         ScaleTransition(
                           scale: _sendScale,
                           child: Padding(
-                            padding: const EdgeInsets.only(right: 6, bottom: 6, top: 6),
+                            padding: const EdgeInsets.only(
+                              right: 6,
+                              bottom: 6,
+                              top: 6,
+                            ),
                             child: _SendButton(onTap: _submit),
                           ),
                         ),
@@ -418,11 +442,7 @@ class _SendButton extends StatelessWidget {
         child: const SizedBox(
           width: 44,
           height: 44,
-          child: Icon(
-            CupertinoIcons.arrow_up,
-            color: Colors.white,
-            size: 20,
-          ),
+          child: Icon(CupertinoIcons.arrow_up, color: Colors.white, size: 20),
         ),
       ),
     );

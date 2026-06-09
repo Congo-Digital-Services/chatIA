@@ -37,7 +37,7 @@ class LoginPage extends ConsumerWidget {
           gradient: LinearGradient(
             colors: isDark
                 ? [const Color(0xFF161614), const Color(0xFF1C1C19)]
-                : [const Color(0xFFF9F9F7), const Color(0xFFEFF0EB)],
+                : [const Color(0xFFF4EEE3), const Color(0xFFE6DECF)],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -126,8 +126,8 @@ class LoginPage extends ConsumerWidget {
                         onPressed: auth.isLoading
                             ? null
                             : () => ref
-                                .read(authControllerProvider)
-                                .signInWithSso(),
+                                  .read(authControllerProvider)
+                                  .signInWithSso(),
                       ),
                       // Message d'erreur
                       if (auth.errorMessage != null) ...[

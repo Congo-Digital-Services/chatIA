@@ -42,10 +42,18 @@ class ChatIAApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       title: 'ChatIA',
       theme: AppTheme.build(isDark: false, accentColor: settings.accentColor),
-      darkTheme: AppTheme.build(isDark: true, accentColor: settings.accentColor),
+      darkTheme: AppTheme.build(
+        isDark: true,
+        accentColor: settings.accentColor,
+      ),
       themeMode: settings.themeMode,
       routerConfig: router,
       builder: (context, child) {
+        AppThemeColors.syncWithContext(
+          context,
+          activeAccent: settings.accentColor,
+        );
+
         if (!kIsWeb) {
           return child ?? const SizedBox.shrink();
         }
@@ -62,9 +70,11 @@ class _MobileEmulatorWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = MediaQuery.of(context).platformBrightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFE5E5E5),
+      backgroundColor: isDark
+          ? const Color(0xFF1A1A1A)
+          : const Color(0xFFD8D1C5),
       body: Center(
         child: Container(
           width: 390,
