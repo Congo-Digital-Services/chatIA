@@ -6,12 +6,14 @@ import 'core/router/app_router.dart';
 import 'core/services/auth_service.dart';
 import 'core/services/keycloak_auth_service.dart';
 import 'core/services/token_storage_service.dart';
+import 'core/services/url_strategy_helper.dart';
 import 'features/auth/providers/auth_state_provider.dart';
 import 'features/chat/providers/chat_state_provider.dart';
 import 'features/settings/providers/settings_provider.dart';
 import 'shared/theme/app_theme.dart';
 
 void main() {
+  configureUrlStrategy();
   WidgetsFlutterBinding.ensureInitialized();
 
   runApp(
