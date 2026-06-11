@@ -30,15 +30,15 @@ class ChatMessage {
     bool? isImage,
     String? audioUrl,
   }) : this(
-          id: id,
-          role: ChatRole.user,
-          text: text,
-          fileUrl: fileUrl,
-          fileName: fileName,
-          fileSize: fileSize,
-          isImage: isImage,
-          audioUrl: audioUrl,
-        );
+         id: id,
+         role: ChatRole.user,
+         text: text,
+         fileUrl: fileUrl,
+         fileName: fileName,
+         fileSize: fileSize,
+         isImage: isImage,
+         audioUrl: audioUrl,
+       );
 
   const ChatMessage.assistant({
     required String id,
@@ -49,13 +49,35 @@ class ChatMessage {
     bool? isImage,
     String? audioUrl,
   }) : this(
-          id: id,
-          role: ChatRole.assistant,
-          text: text,
-          fileUrl: fileUrl,
-          fileName: fileName,
-          fileSize: fileSize,
-          isImage: isImage,
-          audioUrl: audioUrl,
-        );
+         id: id,
+         role: ChatRole.assistant,
+         text: text,
+         fileUrl: fileUrl,
+         fileName: fileName,
+         fileSize: fileSize,
+         isImage: isImage,
+         audioUrl: audioUrl,
+       );
+
+  ChatMessage copyWith({
+    String? id,
+    ChatRole? role,
+    String? text,
+    String? fileUrl,
+    String? fileName,
+    String? fileSize,
+    bool? isImage,
+    String? audioUrl,
+  }) {
+    return ChatMessage(
+      id: id ?? this.id,
+      role: role ?? this.role,
+      text: text ?? this.text,
+      fileUrl: fileUrl ?? this.fileUrl,
+      fileName: fileName ?? this.fileName,
+      fileSize: fileSize ?? this.fileSize,
+      isImage: isImage ?? this.isImage,
+      audioUrl: audioUrl ?? this.audioUrl,
+    );
+  }
 }

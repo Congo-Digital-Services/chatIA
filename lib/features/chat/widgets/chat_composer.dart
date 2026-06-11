@@ -67,25 +67,30 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final value = _controller.text.trim();
     if (value.isEmpty && _attachedFile == null) return;
 
     _controller.clear();
 
     if (_attachedFile != null) {
-      ref
-          .read(chatControllerProvider)
-          .sendFileMessage(
-            value,
-            url: _attachedFile!.url,
-            name: _attachedFile!.name,
-            size: _attachedFile!.size,
-            isImage: _attachedFile!.isImage,
-          );
+      final file = _attachedFile!;
       setState(() {
         _attachedFile = null;
       });
+      await ref
+          .read(chatControllerProvider)
+          .sendFileMessage(
+            value,
+            url: file.url,
+            name: file.name,
+            size: file.size,
+            isImage: file.isImage,
+            bytes: file.bytes,
+            mimeType: file.mimeType,
+            width: file.width,
+            height: file.height,
+          );
     } else {
       widget.onSend(value);
     }
@@ -140,14 +145,22 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
 
   Future<void> _sendRecording() async {
     final durationText = _formatDuration(_recordDurationSeconds);
-    final url = await audioRecorder.stopRecording();
+    final audio = await audioRecorder.stopRecording();
     _stopRecordingTimer();
     setState(() {
       _isRecording = false;
       _recordDurationSeconds = 0;
     });
-    if (url != null) {
-      ref.read(chatControllerProvider).sendVoiceMessage(url, durationText);
+    if (audio != null) {
+      await ref
+          .read(chatControllerProvider)
+          .sendVoiceMessage(
+            audio.url,
+            durationText,
+            bytes: audio.bytes,
+            mimeType: audio.mimeType,
+            name: audio.name,
+          );
     }
   }
 

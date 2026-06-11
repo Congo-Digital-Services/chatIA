@@ -16,15 +16,23 @@ class AudioRecorderMobile extends AudioRecorderPlatform {
   }
 
   @override
-  Future<String?> stopRecording() async {
+  Future<RecordedAudioInfo?> stopRecording() async {
     if (!_isRecording) return null;
     _isRecording = false;
     debugPrint('Mock recording stopped on mobile/desktop');
-    return 'mock_recorded_audio.mp3';
+    return const RecordedAudioInfo(
+      url: 'mock_recorded_audio.mp3',
+      name: 'mock_recorded_audio.mp3',
+      mimeType: 'audio/mpeg',
+    );
   }
 
   @override
-  void play(String url, {required void Function(double progress) onPositionChanged, required VoidCallback onComplete}) {
+  void play(
+    String url, {
+    required void Function(double progress) onPositionChanged,
+    required VoidCallback onComplete,
+  }) {
     stopPlaying();
     debugPrint('Mock audio playing: $url');
     double currentProgress = 0.0;

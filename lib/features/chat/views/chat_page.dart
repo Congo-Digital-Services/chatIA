@@ -26,6 +26,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   bool _isVoiceCallActive = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(chatControllerProvider).loadConversations();
+    });
+  }
+
+  @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();

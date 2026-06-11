@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/constants/backend_config.dart';
+import '../../../core/services/librechat_api_service.dart';
 import '../../auth/providers/auth_state_provider.dart';
 import '../../../shared/data/mock_data.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -119,6 +121,7 @@ class SettingsPage extends ConsumerWidget {
     final user = auth.session;
     final theme = Theme.of(context);
     final settings = ref.watch(settingsControllerProvider);
+    final backendConfig = ref.watch(libreChatConfigProvider);
     final isDark = theme.brightness == Brightness.dark;
 
     // Localized labels
@@ -181,6 +184,22 @@ class SettingsPage extends ConsumerWidget {
 
     String getLanguageSubtitle() {
       return SettingsController.languageName(settings.language);
+    }
+
+    String getBackendSubtitle() {
+      return backendConfig.when(
+        data: (config) {
+          final emailLogin = config['emailLoginEnabled'] == true;
+          final registration = config['registrationEnabled'] == true;
+          final emailLabel = emailLogin ? 'email actif' : 'email inactif';
+          final registerLabel = registration
+              ? 'inscription active'
+              : 'inscription inactive';
+          return '${BackendConfig.baseUrl} • $emailLabel • $registerLabel';
+        },
+        loading: () => 'Connexion à ${BackendConfig.baseUrl}...',
+        error: (error, _) => '${BackendConfig.baseUrl} • indisponible',
+      );
     }
 
     final paletteColors = [
@@ -329,6 +348,23 @@ class SettingsPage extends ConsumerWidget {
                 settings.setVoiceEngine(idx == 0 ? 'local' : 'server');
               },
               note: settings.translate('voice_note'),
+            ),
+
+            const SizedBox(height: 32),
+
+            _SectionTitle(theme: theme, label: 'Backend'),
+            const SizedBox(height: 14),
+            SettingsTile(
+              icon: CupertinoIcons.cloud,
+              title: 'LibreChat API',
+              subtitle: getBackendSubtitle(),
+              trailing: backendConfig.hasError
+                  ? CupertinoIcons.exclamationmark_triangle
+                  : backendConfig.isLoading
+                  ? CupertinoIcons.clock
+                  : CupertinoIcons.checkmark_seal,
+              onTap: () => ref.invalidate(libreChatConfigProvider),
+              note: 'Touchez pour relancer /api/config.',
             ),
 
             const SizedBox(height: 32),
