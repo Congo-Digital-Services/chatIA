@@ -441,6 +441,10 @@ class SettingsPage extends ConsumerWidget {
                     height: 44,
                     child: FilledButton(
                       onPressed: () async {
+                        try {
+                          final api = ref.read(libreChatApiProvider);
+                          if (api.isAvailable) await api.logout();
+                        } catch (_) {}
                         await ref.read(authControllerProvider).signOut();
                       },
                       style: FilledButton.styleFrom(

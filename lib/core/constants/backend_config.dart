@@ -3,7 +3,7 @@ class BackendConfig {
 
   static const baseUrl = String.fromEnvironment(
     'CHATIA_API_BASE_URL',
-    defaultValue: 'http://localhost:3080',
+    defaultValue: 'http://135.125.102.165:3080',
   );
 
   static const userAgent =

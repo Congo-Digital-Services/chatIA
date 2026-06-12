@@ -260,6 +260,25 @@ class _AuthCard extends ConsumerWidget {
                 : () => ref.read(authControllerProvider).signInWithSso(),
           ),
 
+          // ── Liens d'aide Keycloak ─────────────────────────────────────────
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _HelpLink(
+                label: 'Mot de passe oublié ?',
+                uri: KeycloakConfig.passwordResetUri,
+              ),
+              const SizedBox(width: 8),
+              Text('·', style: TextStyle(color: AppThemeColors.textMuted)),
+              const SizedBox(width: 8),
+              _HelpLink(
+                label: 'Créer un compte',
+                uri: KeycloakConfig.registrationUri,
+              ),
+            ],
+          ),
+
           // ── Erreur ────────────────────────────────────────────────────────
           if (auth.errorMessage != null) ...[
             const SizedBox(height: 12),
@@ -420,6 +439,30 @@ class _KeycloakButton extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Lien d'aide Keycloak ────────────────────────────────────────────────────
+class _HelpLink extends StatelessWidget {
+  const _HelpLink({required this.label, required this.uri});
+
+  final String label;
+  final Uri uri;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => OAuthBrowserHelper.openPopup(uri.toString()),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          color: AppThemeColors.accent,
+          decoration: TextDecoration.underline,
+          decorationColor: AppThemeColors.accent.withValues(alpha: 0.4),
         ),
       ),
     );

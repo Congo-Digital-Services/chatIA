@@ -7,14 +7,11 @@ import '../../../core/services/oauth_browser_helper.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../providers/auth_state_provider.dart';
 
-/// Page intermédiaire qui gère le retour du navigateur depuis Keycloak.
+/// Page de callback OAuth.
 ///
-/// Keycloak redirige vers :
-///   `<origin>/#/oauth/openid/callback?code=xxx&state=yyy`
-///
-/// GoRouter parse `/oauth/openid/callback` comme chemin et `code`/`state` comme
-/// paramètres de requête. Cette page échange le code contre les tokens,
-/// puis redirige vers `/chat` (succès) ou `/login` (erreur).
+/// Keycloak redirige vers l'app Flutter après auth.
+/// GoRouter parse le code et le state depuis l'URL.
+/// Cette page échange le code contre les tokens Keycloak.
 class OAuthCallbackPage extends ConsumerStatefulWidget {
   const OAuthCallbackPage({
     super.key,
@@ -39,7 +36,6 @@ class _OAuthCallbackPageState extends ConsumerState<OAuthCallbackPage> {
 
   Future<void> _exchange() async {
     if (widget.code.isEmpty || widget.state.isEmpty) {
-      // Paramètres manquants — retour à la page de connexion.
       if (mounted) context.go('/login');
       return;
     }

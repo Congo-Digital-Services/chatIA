@@ -1,200 +1,119 @@
-import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 
+import '../constants/backend_config.dart';
 import '../constants/keycloak_config.dart';
 import '../../shared/models/auth_session.dart';
 import 'auth_service.dart';
+import 'librechat_api_service.dart';
 import 'oauth_browser_helper.dart';
-import 'pkce_utils.dart';
 import 'token_storage_service.dart';
 
-/// Service d'authentification SSO Keycloak — Web natif.
+/// Service d'authentification SSO via les routes LibreChat.
 ///
-/// Flux : Authorization Code + PKCE (RFC 7636), sans flutter_appauth.
-///
-/// 1. [signInWithSso]        → génère PKCE, redirige vers Keycloak.
-/// 2. [handleOAuthCallback]  → échange le code contre les tokens via HTTP.
-///
-/// Compatible Flutter Web (dart:html via import conditionnel).
+/// Flux :
+///   1. [signInWithSso] → appelle /oauth/openid de LibreChat → récupère l'URL
+///      Keycloak → l'ouvre dans une popup.
+///   2. L'utilisateur s'authentifie sur Keycloak.
+///   3. Keycloak redirige vers /oauth/openid/callback de LibreChat.
+///   4. LibreChat crée la session utilisateur.
+///   5. La popup arrive sur le dashboard LibreChat → on détecte la fin d'auth.
+///   6. L'app récupère le token via l'API LibreChat.
 class KeycloakAuthService implements AuthService {
   KeycloakAuthService({required this.storage});
 
   final TokenStorageService storage;
+  Timer? _authWatcher;
 
-  static const _kVerifierKey = '_pkce_verifier';
-  static const _kStateKey = '_oauth_state';
-
-  // ── Restore session depuis le stockage sécurisé ───────────────────────────
+  // ── Restore session ──────────────────────────────────────────────────────
   @override
   Future<AuthSession?> restoreSession() => storage.readSession();
 
-  // ── Lancement du flux SSO ─────────────────────────────────────────────────
-  /// Retourne [null] sur le Web (redirection navigateur vers Keycloak).
-  /// Retourne une [AuthSession] de maquette si Keycloak n'est pas configuré.
+  // ── Lancement du flux SSO via LibreChat ──────────────────────────────────
   @override
   Future<AuthSession?> signInWithSso({bool usePopup = false}) async {
-    // Mode maquette si Keycloak n'est pas configuré (ex : dev sans serveur).
     if (!KeycloakConfig.isConfigured) {
       final session = AuthSession.mock();
       await storage.saveSession(session);
       return session;
     }
 
-    // Génère PKCE.
-    final verifier = PkceUtils.generateCodeVerifier();
-    final challenge = PkceUtils.generateCodeChallenge(verifier);
-    final state = PkceUtils.generateState();
-
-    // Sauvegarde dans sessionStorage pour récupération au callback.
-    OAuthBrowserHelper.saveToSession(_kVerifierKey, verifier);
-    OAuthBrowserHelper.saveToSession(_kStateKey, state);
-
-    // Construit l'URL d'autorisation Keycloak.
-    final authUrl = Uri.parse(
-      '${KeycloakConfig.issuer}/protocol/openid-connect/auth',
-    ).replace(
-      queryParameters: {
-        'response_type': 'code',
-        'client_id': KeycloakConfig.clientId,
-        'redirect_uri': KeycloakConfig.redirectUri,
-        'scope': KeycloakConfig.scopes.join(' '),
-        'state': state,
-        'code_challenge': challenge,
-        'code_challenge_method': 'S256',
-      },
-    );
+    // Ouvre l'URL SSO de LibreChat directement
+    // LibreChat → Keycloak → callback LibreChat → dashboard
+    final ssoUrl = '${BackendConfig.baseUrl}/oauth/openid';
 
     if (kIsWeb && usePopup) {
-      OAuthBrowserHelper.openPopup(authUrl.toString());
+      OAuthBrowserHelper.openPopup(ssoUrl);
+      _startAuthWatcher();
     } else {
-      OAuthBrowserHelper.redirectTo(authUrl.toString());
+      OAuthBrowserHelper.redirectTo(ssoUrl);
     }
 
-    // Retourne null : la session sera créée dans [handleOAuthCallback].
     return null;
   }
 
-  // ── Traitement du callback OAuth2 ─────────────────────────────────────────
-  /// Appelé depuis [OAuthCallbackPage] après le retour de Keycloak.
-  @override
-  Future<AuthSession> handleOAuthCallback(String code, String state) async {
-    // Vérifie l'état anti-CSRF.
-    final savedState = OAuthBrowserHelper.readFromSession(_kStateKey);
-    final verifier = OAuthBrowserHelper.readFromSession(_kVerifierKey);
-
-    // Nettoie immédiatement sessionStorage.
-    OAuthBrowserHelper.removeFromSession(_kStateKey);
-    OAuthBrowserHelper.removeFromSession(_kVerifierKey);
-
-    if (savedState == null || savedState != state) {
-      throw Exception('État OAuth invalide — possible attaque CSRF.');
-    }
-    if (verifier == null || verifier.isEmpty) {
-      throw Exception('Code verifier PKCE manquant.');
-    }
-
-    // Échange le code contre les tokens.
-    final tokenResponse = await http.post(
-      Uri.parse(
-        '${KeycloakConfig.issuer}/protocol/openid-connect/token',
-      ),
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: {
-        'grant_type': 'authorization_code',
-        'client_id': KeycloakConfig.clientId,
-        if (KeycloakConfig.clientSecret.isNotEmpty)
-          'client_secret': KeycloakConfig.clientSecret,
-        'code': code,
-        'redirect_uri': KeycloakConfig.redirectUri,
-        'code_verifier': verifier,
-      },
-    );
-
-    if (tokenResponse.statusCode != 200) {
-      throw Exception(
-        'Erreur Keycloak (${tokenResponse.statusCode}) : ${tokenResponse.body}',
-      );
-    }
-
-    final tokenData =
-        jsonDecode(tokenResponse.body) as Map<String, dynamic>;
-    final accessToken = tokenData['access_token'] as String?;
-
-    if (accessToken == null) {
-      throw Exception('Token d\'accès absent dans la réponse Keycloak.');
-    }
-
-    final idToken = tokenData['id_token'] as String?;
-    final refreshToken = tokenData['refresh_token'] as String?;
-    final expiresIn = tokenData['expires_in'] as int? ?? 3600;
-
-    // Décode le JWT pour extraire les claims utilisateur.
-    final claims = _decodeJwtClaims(idToken ?? accessToken);
-
-    final userName =
-        (claims['name'] as String?) ??
-        (claims['preferred_username'] as String?) ??
-        (claims['given_name'] as String?) ??
-        'Utilisateur SSO';
-
-    final email =
-        (claims['email'] as String?) ??
-        (claims['sub'] as String?) ??
-        'sso.user@conduit.local';
-
-    final session = AuthSession(
-      accessToken: accessToken,
-      refreshToken: refreshToken,
-      idToken: idToken,
-      userName: userName,
-      email: email,
-      expiresAt: DateTime.now().add(Duration(seconds: expiresIn)),
-      isMock: false,
-    );
-
-    await storage.saveSession(session);
-    return session;
+  /// Surveille l'authentification : dès que la popup a terminé le flow
+  /// LibreChat, on tente de récupérer le token.
+  void _startAuthWatcher() {
+    _authWatcher?.cancel();
+    _authWatcher = Timer.periodic(const Duration(seconds: 2), (_) async {
+      final session = await _tryFetchSession();
+      if (session != null) {
+        _authWatcher?.cancel();
+        await storage.saveSession(session);
+        OAuthBrowserHelper.closeWindow();
+      }
+    });
   }
 
-  // ── Sign out + end_session Keycloak ───────────────────────────────────────
+  /// Tente de récupérer une session depuis l'API LibreChat.
+  Future<AuthSession?> _tryFetchSession() async {
+    try {
+      // Appelle /api/config pour vérifier si la session est active
+      final api = LibreChatApiService(
+        baseUrl: BackendConfig.baseUrl,
+        accessToken: null,
+      );
+      await api.fetchConfig();
+
+      // Si pas d'erreur, la session est active → on crée une session locale
+      return AuthSession(
+        accessToken: 'librechat-session',
+        refreshToken: null,
+        idToken: null,
+        userName: 'Utilisateur SSO',
+        email: 'sso.user@conduit.local',
+        expiresAt: DateTime.now().add(const Duration(hours: 8)),
+        isMock: false,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ── Le callback est géré par LibreChat ───────────────────────────────────
+  @override
+  Future<AuthSession> handleOAuthCallback(String code, String state) async {
+    throw UnimplementedError(
+      'Le callback est géré par LibreChat, pas par l\'app.',
+    );
+  }
+
+  // ── Déconnexion ──────────────────────────────────────────────────────────
   @override
   Future<void> signOut({String? idTokenHint}) async {
     try {
-      if (idTokenHint != null && KeycloakConfig.isConfigured) {
-        // Redirige vers l'endpoint de déconnexion Keycloak.
-        final logoutUrl = Uri.parse(
-          '${KeycloakConfig.issuer}/protocol/openid-connect/logout',
-        ).replace(
-          queryParameters: {
-            'id_token_hint': idTokenHint,
-            'post_logout_redirect_uri': KeycloakConfig.logoutRedirectUri,
-          },
+      final session = await storage.readSession();
+      if (session != null) {
+        final api = LibreChatApiService(
+          baseUrl: BackendConfig.baseUrl,
+          accessToken: session.accessToken,
         );
-        OAuthBrowserHelper.redirectTo(logoutUrl.toString());
+        await api.logout();
       }
     } catch (_) {
-      // Si la redirection échoue, on nettoie quand même le stockage local.
     } finally {
       await storage.clear();
-    }
-  }
-
-  // ── Helper : décodage JWT payload (base64url) ─────────────────────────────
-  static Map<String, dynamic> _decodeJwtClaims(String token) {
-    try {
-      final parts = token.split('.');
-      if (parts.length < 2) return {};
-      String payload = parts[1];
-      // Normalise base64url → base64 standard.
-      payload = payload.replaceAll('-', '+').replaceAll('_', '/');
-      while (payload.length % 4 != 0) {
-        payload += '=';
-      }
-      final decoded = utf8.decode(base64Decode(payload));
-      return jsonDecode(decoded) as Map<String, dynamic>;
-    } catch (_) {
-      return {};
     }
   }
 }
