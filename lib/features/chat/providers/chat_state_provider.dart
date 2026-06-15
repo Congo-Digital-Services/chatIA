@@ -3,13 +3,13 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/services/librechat_api_service.dart';
+import '../../../core/services/chatia_api_service.dart';
 import '../../../shared/data/mock_data.dart';
 import '../../../shared/models/chat_message.dart';
 import '../../../shared/models/conversation.dart';
 
 final chatControllerProvider = ChangeNotifierProvider<ChatController>((ref) {
-  final apiService = ref.watch(libreChatApiProvider);
+  final apiService = ref.watch(chatiaApiProvider);
   return ChatController(apiService);
 });
 
@@ -19,7 +19,7 @@ class ChatController extends ChangeNotifier {
     _selectedConversation = _conversations.first;
   }
 
-  final LibreChatApiService _apiService;
+  final ChatiaApiService _apiService;
 
   late List<Conversation> _conversations;
   late Conversation _selectedConversation;
@@ -192,6 +192,64 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Supprime un message précis sur le serveur LibreChat
+  /// [DELETE /api/messages/:conversationId/:messageId]
+  /// et le retire localement de la conversation.
+  Future<void> deleteMessageFromServer(
+    String conversationId,
+    String messageId,
+  ) async {
+    // Suppression locale immédiate (optimiste)
+    final updatedMessages = _selectedConversation.messages
+        .where((m) => m.id != messageId)
+        .toList();
+    final updatedConversation = _selectedConversation.copyWith(
+      messages: updatedMessages,
+    );
+    _conversations = _conversations.map((c) {
+      return c.id == _selectedConversation.id ? updatedConversation : c;
+    }).toList();
+    _selectedConversation = updatedConversation;
+    notifyListeners();
+
+    if (!_apiService.isAvailable) return;
+
+    try {
+      await _apiService.deleteMessage(conversationId, messageId);
+    } catch (error) {
+      // En cas d'échec serveur, on restaure le message d'origine
+      errorMessage = 'Impossible de supprimer le message : ${error.toString()}';
+      notifyListeners();
+    }
+  }
+
+  /// Modifie le texte d'un message sur le serveur LibreChat
+  /// [PUT /api/messages/:conversationId/:messageId]
+  /// et met à jour la vue locale.
+  Future<void> updateMessageOnServer(
+    String conversationId,
+    String messageId, {
+    required String newText,
+  }) async {
+    if (!_apiService.isAvailable) {
+      // Mise à jour locale uniquement
+      _updateMessage(messageId, (m) => m.copyWith(text: newText));
+      return;
+    }
+
+    try {
+      final updated = await _apiService.updateMessage(
+        conversationId,
+        messageId,
+        text: newText,
+      );
+      _updateMessage(messageId, (_) => updated);
+    } catch (error) {
+      errorMessage = 'Impossible de modifier le message : ${error.toString()}';
+      notifyListeners();
+    }
+  }
+
   void createConversation() {
     final conversation = Conversation(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -290,6 +348,64 @@ class ChatController extends ChangeNotifier {
       _updateAssistantMessage(
         assistantId,
         'Erreur d\'envoi : ${error.toString()}',
+      );
+    } finally {
+      isStreaming = false;
+      notifyListeners();
+    }
+  }
+
+  /// Envoie un message via un agent LibreChat spécifique
+  /// [POST /api/agents/chat + GET /api/agents/chat/stream/:streamId]
+  /// Nécessite un [agentId] valide configuré sur l'instance LibreChat.
+  Future<void> sendMessageAsAgent(String text, {required String agentId}) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || agentId.isEmpty) return;
+
+    final parentMessageId = _parentMessageId(_selectedConversation);
+    final conversationId = _serverConversationId(_selectedConversation.id);
+    final userMessage = ChatMessage.user(id: _uuidV4(), text: trimmed);
+    final assistantId = _uuidV4();
+    final assistantMessage = ChatMessage.assistant(id: assistantId, text: '');
+    _appendMessages(userMessage, assistantMessage);
+
+    if (!_apiService.isAvailable) {
+      _updateAssistantMessage(
+        assistantId,
+        'Agent non disponible (pas de token). Réponse mockée.',
+      );
+      return;
+    }
+
+    isStreaming = true;
+    errorMessage = null;
+    notifyListeners();
+
+    try {
+      final stream = _apiService.sendAgentChat(
+        agentId: agentId,
+        conversationId: conversationId,
+        parentMessageId: parentMessageId,
+        messageId: userMessage.id,
+        text: trimmed,
+      );
+
+      var accumulated = '';
+      await for (final event in stream) {
+        if (event.conversationId != null && event.conversationId!.isNotEmpty) {
+          _updateConversationId(
+            _selectedConversation.id,
+            event.conversationId!,
+          );
+        }
+        if (event.done) continue;
+        accumulated += event.content;
+        _updateAssistantMessage(assistantId, accumulated);
+      }
+    } catch (error) {
+      _updateAssistantMessage(
+        assistantId,
+        'Erreur agent : ${error.toString()}',
       );
     } finally {
       isStreaming = false;

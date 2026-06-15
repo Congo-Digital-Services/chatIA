@@ -141,11 +141,117 @@ class ChatiaApiService {
     }
 
     final jsonBody = jsonDecode(response.body);
+    // L'API peut retourner un tableau direct ou {messages: [...]}
     final items = jsonBody is Map<String, dynamic>
         ? (jsonBody['messages'] as List<dynamic>?) ?? []
         : (jsonBody as List<dynamic>);
 
     return items.cast<Map<String, dynamic>>().map(_mapApiMessage).toList();
+  }
+
+  /// GET /api/messages/:conversationId/:messageId
+  /// Récupère un message précis dans une conversation.
+  Future<ChatMessage> fetchSingleMessage(
+    String conversationId,
+    String messageId,
+  ) async {
+    final uri = _uri('/api/messages/$conversationId/$messageId');
+    final response = await http.get(uri, headers: _jsonHeaders);
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Message introuvable ($conversationId/$messageId) : ${response.statusCode}',
+      );
+    }
+
+    final jsonBody = jsonDecode(response.body);
+    final data = jsonBody is Map<String, dynamic>
+        ? jsonBody
+        : (jsonBody as List<dynamic>).first as Map<String, dynamic>;
+    return _mapApiMessage(data);
+  }
+
+  /// POST /api/messages/:conversationId
+  /// Sauvegarde un message dans une conversation existante.
+  /// Retourne le message tel que persisté par le backend.
+  Future<ChatMessage> saveMessage(
+    String conversationId, {
+    required String messageId,
+    required String parentMessageId,
+    required String sender,
+    required String text,
+    bool isCreatedByUser = true,
+    bool error = false,
+  }) async {
+    final uri = _uri('/api/messages/$conversationId');
+    final body = jsonEncode({
+      'messageId': messageId,
+      'parentMessageId': parentMessageId,
+      'sender': sender,
+      'text': text,
+      'isCreatedByUser': isCreatedByUser,
+      'error': error,
+    });
+
+    final response = await http.post(uri, headers: _jsonHeaders, body: body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Impossible de sauvegarder le message : ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final jsonBody = jsonDecode(response.body);
+    if (jsonBody is Map<String, dynamic>) {
+      return _mapApiMessage(jsonBody);
+    }
+    // Certaines versions de LibreChat retournent le message directement
+    return ChatMessage(
+      id: messageId,
+      role: isCreatedByUser ? ChatRole.user : ChatRole.assistant,
+      text: text,
+    );
+  }
+
+  /// PUT /api/messages/:conversationId/:messageId
+  /// Modifie le contenu d'un message existant.
+  Future<ChatMessage> updateMessage(
+    String conversationId,
+    String messageId, {
+    required String text,
+  }) async {
+    final uri = _uri('/api/messages/$conversationId/$messageId');
+    final body = jsonEncode({'text': text});
+
+    final response = await http.put(uri, headers: _jsonHeaders, body: body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Impossible de modifier le message : ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final jsonBody = jsonDecode(response.body);
+    if (jsonBody is Map<String, dynamic>) {
+      return _mapApiMessage(jsonBody);
+    }
+    return ChatMessage(
+      id: messageId,
+      role: ChatRole.assistant,
+      text: text,
+    );
+  }
+
+  /// DELETE /api/messages/:conversationId/:messageId
+  /// Supprime un message précis d'une conversation.
+  Future<void> deleteMessage(
+    String conversationId,
+    String messageId,
+  ) async {
+    final uri = _uri('/api/messages/$conversationId/$messageId');
+    final response = await http.delete(uri, headers: _jsonHeaders);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Impossible de supprimer le message : ${response.statusCode} ${response.body}',
+      );
+    }
   }
 
   Future<OpenAIChatResponse> startOpenAIChat({
@@ -176,6 +282,76 @@ class ChatiaApiService {
     return OpenAIChatResponse(
       streamId: data['streamId']?.toString() ?? '',
       conversationId: data['conversationId']?.toString(),
+    );
+  }
+
+  /// POST /api/agents/chat
+  /// Démarre une conversation avec un agent LibreChat spécifique.
+  /// Nécessite un [agentId] valide configuré sur l'instance LibreChat.
+  /// Retourne un [OpenAIChatResponse] avec le streamId pour le flux SSE.
+  Future<OpenAIChatResponse> startAgentChat({
+    required String agentId,
+    required String parentMessageId,
+    required String messageId,
+    required String text,
+    String? conversationId,
+  }) async {
+    final uri = _uri('/api/agents/chat');
+    final body = jsonEncode({
+      'agent_id': agentId,
+      'conversationId': conversationId,
+      'parentMessageId': parentMessageId,
+      'messageId': messageId,
+      'text': text,
+    });
+
+    final response = await http.post(uri, headers: _jsonHeaders, body: body);
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Échec démarrage chat agent ($agentId): ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return OpenAIChatResponse(
+      streamId: data['streamId']?.toString() ?? '',
+      conversationId: data['conversationId']?.toString(),
+    );
+  }
+
+  /// Stream complet via un agent LibreChat (POST /api/agents/chat + SSE stream).
+  Stream<ChatStreamEvent> sendAgentChat({
+    required String agentId,
+    required String parentMessageId,
+    required String messageId,
+    required String text,
+    String? conversationId,
+  }) async* {
+    final startResponse = await startAgentChat(
+      agentId: agentId,
+      conversationId: conversationId,
+      parentMessageId: parentMessageId,
+      messageId: messageId,
+      text: text,
+    );
+
+    final streamId = startResponse.streamId;
+    if (streamId.isEmpty) {
+      throw Exception('StreamId manquant depuis le backend (agent).');
+    }
+
+    await for (final partial in streamChat(streamId)) {
+      yield ChatStreamEvent(
+        conversationId: startResponse.conversationId,
+        content: partial,
+        done: false,
+      );
+    }
+
+    yield ChatStreamEvent(
+      conversationId: startResponse.conversationId,
+      content: '',
+      done: true,
     );
   }
 

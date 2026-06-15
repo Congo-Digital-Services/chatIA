@@ -187,7 +187,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                             if (index < messages.length) {
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 16),
-                                child: MessageBubble(message: messages[index]),
+                                child: MessageBubble(
+                                  message: messages[index],
+                                  conversation: conversation,
+                                ),
                               );
                             }
                             // Hero card

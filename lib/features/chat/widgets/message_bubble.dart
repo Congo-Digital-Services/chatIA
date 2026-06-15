@@ -1,22 +1,163 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/audio_recorder.dart';
 import '../../../core/services/file_picker.dart';
 import '../../../shared/models/chat_message.dart';
+import '../../../shared/models/conversation.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../providers/chat_state_provider.dart';
 
 class MessageBubble extends ConsumerWidget {
-  const MessageBubble({super.key, required this.message});
+  const MessageBubble({
+    super.key,
+    required this.message,
+    required this.conversation,
+  });
 
   final ChatMessage message;
+  final Conversation conversation;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isUser = message.role == ChatRole.user;
     final theme = Theme.of(context);
 
+    return GestureDetector(
+      onLongPress: () => _showMessageActions(context, ref),
+      child: _buildBubble(context, theme, isUser),
+    );
+  }
+
+  /// Affiche le menu contextuel pour modifier ou supprimer le message.
+  /// Utilise les routes : PUT et DELETE /api/messages/:conversationId/:messageId
+  void _showMessageActions(BuildContext context, WidgetRef ref) {
+    HapticFeedback.mediumImpact();
+    final chat = ref.read(chatControllerProvider);
+    final conversationId = conversation.id;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          margin: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Theme.of(ctx).brightness == Brightness.dark
+                ? AppThemeColors.card
+                : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppThemeColors.stroke,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Copier
+              ListTile(
+                leading: const Icon(CupertinoIcons.doc_on_doc),
+                title: const Text('Copier'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Clipboard.setData(ClipboardData(text: message.text));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Message copié'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
+              ),
+              // Modifier (uniquement si l'utilisateur peut éditer)
+              if (message.role == ChatRole.user)
+                ListTile(
+                  leading: const Icon(CupertinoIcons.pencil),
+                  title: const Text('Modifier'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showEditDialog(context, ref, chat, conversationId);
+                  },
+                ),
+              // Supprimer — DELETE /api/messages/:conversationId/:messageId
+              ListTile(
+                leading: Icon(
+                  CupertinoIcons.delete,
+                  color: Colors.red.shade400,
+                ),
+                title: Text(
+                  'Supprimer',
+                  style: TextStyle(color: Colors.red.shade400),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  chat.deleteMessageFromServer(conversationId, message.id);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Boîte de dialogue pour modifier le texte du message.
+  /// Utilise PUT /api/messages/:conversationId/:messageId
+  void _showEditDialog(
+    BuildContext context,
+    WidgetRef ref,
+    ChatController chat,
+    String conversationId,
+  ) {
+    final controller = TextEditingController(text: message.text);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Modifier le message'),
+        content: TextField(
+          controller: controller,
+          maxLines: null,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'Nouveau texte…',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              final newText = controller.text.trim();
+              if (newText.isNotEmpty && newText != message.text) {
+                chat.updateMessageOnServer(
+                  conversationId,
+                  message.id,
+                  newText: newText,
+                );
+              }
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBubble(BuildContext context, ThemeData theme, bool isUser) {
     if (isUser) {
       return Align(
         alignment: Alignment.centerRight,

@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/backend_config.dart';
-import '../../../core/services/librechat_api_service.dart';
+import '../../../core/services/chatia_api_service.dart';
 import '../../auth/providers/auth_state_provider.dart';
 import '../../../shared/data/mock_data.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -121,7 +121,7 @@ class SettingsPage extends ConsumerWidget {
     final user = auth.session;
     final theme = Theme.of(context);
     final settings = ref.watch(settingsControllerProvider);
-    final backendConfig = ref.watch(libreChatConfigProvider);
+    final backendConfig = ref.watch(chatiaConfigProvider);
     final isDark = theme.brightness == Brightness.dark;
 
     // Localized labels
@@ -356,14 +356,14 @@ class SettingsPage extends ConsumerWidget {
             const SizedBox(height: 14),
             SettingsTile(
               icon: CupertinoIcons.cloud,
-              title: 'LibreChat API',
+              title: 'ChatIA API',
               subtitle: getBackendSubtitle(),
               trailing: backendConfig.hasError
                   ? CupertinoIcons.exclamationmark_triangle
                   : backendConfig.isLoading
                   ? CupertinoIcons.clock
                   : CupertinoIcons.checkmark_seal,
-              onTap: () => ref.invalidate(libreChatConfigProvider),
+              onTap: () => ref.invalidate(chatiaConfigProvider),
               note: 'Touchez pour relancer /api/config.',
             ),
 
@@ -442,7 +442,7 @@ class SettingsPage extends ConsumerWidget {
                     child: FilledButton(
                       onPressed: () async {
                         try {
-                          final api = ref.read(libreChatApiProvider);
+                          final api = ref.read(chatiaApiProvider);
                           if (api.isAvailable) await api.logout();
                         } catch (_) {}
                         await ref.read(authControllerProvider).signOut();
