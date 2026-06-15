@@ -17,6 +17,8 @@ class AuthSession {
   final DateTime expiresAt;
   final bool isMock;
 
+  bool get isExpired => DateTime.now().isAfter(expiresAt);
+
   factory AuthSession.mock() {
     return AuthSession(
       accessToken: 'mock_access_token',

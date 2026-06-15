@@ -2,17 +2,25 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/auth_service.dart';
+import '../../../core/services/token_storage_service.dart';
 import '../../../shared/models/auth_session.dart';
 
 final authControllerProvider = ChangeNotifierProvider<AuthController>((ref) {
   final service = ref.watch(authServiceProvider);
-  return AuthController(service)..restore();
+  final storage = ref.watch(tokenStorageServiceProvider);
+  return AuthController(service, storage)..restore();
 });
 
 class AuthController extends ChangeNotifier {
-  AuthController(this._service);
+  AuthController(this._service, this._storage);
+
+  static const _resetAuthOnStart = bool.fromEnvironment(
+    'RESET_AUTH_ON_START',
+    defaultValue: true,
+  );
 
   final AuthService _service;
+  final TokenStorageService _storage;
   AuthSession? session;
   bool isLoading = false;
   bool isRestoring = true;
@@ -26,7 +34,26 @@ class AuthController extends ChangeNotifier {
       isRestoring = true;
       errorMessage = null;
       notifyListeners();
-      session = await _service.restoreSession();
+
+      if (kDebugMode && _resetAuthOnStart) {
+        await _storage.clear();
+        session = null;
+        return;
+      }
+
+      final restoredSession = await _service.restoreSession();
+      if (restoredSession == null) {
+        session = null;
+        return;
+      }
+
+      if (restoredSession.isMock || restoredSession.isExpired) {
+        await _storage.clear();
+        session = null;
+        return;
+      }
+
+      session = restoredSession;
     } catch (error) {
       errorMessage = error.toString();
     } finally {
