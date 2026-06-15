@@ -36,7 +36,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       return;
     }
 
-    final error = message['error']?.toString() ??
+    final error =
+        message['error']?.toString() ??
         'Connexion annulée ou impossible. Veuillez réessayer.';
     ref.read(authControllerProvider).setErrorMessage(error);
   }
@@ -85,75 +86,90 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           ),
         ),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Spacer(flex: 2),
-
-                // ── Logo + nom ───────────────────────────────────────────────
-                const ConduitLogo(),
-                const SizedBox(height: 20),
-                Text(
-                  'ChatIA',
-                  style: theme.textTheme.displaySmall?.copyWith(
-                    letterSpacing: -1.5,
-                    color: AppThemeColors.textStrong,
-                  ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 28,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Votre assistant IA sécurisé,\npowered by Congo Digital Services.',
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: AppThemeColors.textSoft,
-                    height: 1.5,
-                  ),
-                ),
-
-                const SizedBox(height: 36),
-
-                // ── Carte d'authentification ─────────────────────────────────
-                _AuthCard(auth: auth, isDark: isDark, theme: theme),
-
-                const Spacer(flex: 3),
-
-                // ── Pied de page ─────────────────────────────────────────────
-                Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            CupertinoIcons.lock_shield_fill,
-                            size: 12,
-                            color: AppThemeColors.textMuted,
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            'Authentification sécurisée via Keycloak SSO',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: AppThemeColors.textMuted,
-                              letterSpacing: 0.1,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
+                      SizedBox(height: constraints.maxHeight * 0.06),
+
+                      // ── Logo + nom ─────────────────────────────────────────
+                      const ConduitLogo(),
+                      const SizedBox(height: 20),
                       Text(
-                        KeycloakConfig.realm,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: AppThemeColors.textMuted.withValues(alpha: 0.6),
-                          fontSize: 10,
-                          letterSpacing: 0.5,
+                        'ChatIA',
+                        style: theme.textTheme.displaySmall?.copyWith(
+                          letterSpacing: -1.5,
+                          color: AppThemeColors.textStrong,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Votre assistant IA sécurisé,\npowered by Congo Digital Services.',
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: AppThemeColors.textSoft,
+                          height: 1.5,
+                        ),
+                      ),
+
+                      const SizedBox(height: 28),
+
+                      // ── Carte d'authentification ───────────────────────────
+                      _AuthCard(auth: auth, isDark: isDark, theme: theme),
+
+                      SizedBox(height: constraints.maxHeight * 0.08),
+
+                      // ── Pied de page ───────────────────────────────────────
+                      Center(
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  CupertinoIcons.lock_shield_fill,
+                                  size: 12,
+                                  color: AppThemeColors.textMuted,
+                                ),
+                                const SizedBox(width: 5),
+                                Flexible(
+                                  child: Text(
+                                    'Authentification sécurisée via Keycloak SSO',
+                                    textAlign: TextAlign.center,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: AppThemeColors.textMuted,
+                                      letterSpacing: 0.1,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              KeycloakConfig.realm,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: AppThemeColors.textMuted.withValues(
+                                  alpha: 0.6,
+                                ),
+                                fontSize: 10,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),
@@ -260,6 +276,25 @@ class _AuthCard extends ConsumerWidget {
                 : () => ref.read(authControllerProvider).signInWithSso(),
           ),
 
+          // ── Liens d'aide Keycloak ─────────────────────────────────────────
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _HelpLink(
+                label: 'Mot de passe oublié ?',
+                uri: KeycloakConfig.passwordResetUri,
+              ),
+              const SizedBox(width: 8),
+              Text('·', style: TextStyle(color: AppThemeColors.textMuted)),
+              const SizedBox(width: 8),
+              _HelpLink(
+                label: 'Créer un compte',
+                uri: KeycloakConfig.registrationUri,
+              ),
+            ],
+          ),
+
           // ── Erreur ────────────────────────────────────────────────────────
           if (auth.errorMessage != null) ...[
             const SizedBox(height: 12),
@@ -347,10 +382,7 @@ class _InfoRow extends StatelessWidget {
         Expanded(
           child: Text(
             value,
-            style: TextStyle(
-              fontSize: 12,
-              color: AppThemeColors.textSoft,
-            ),
+            style: TextStyle(fontSize: 12, color: AppThemeColors.textSoft),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
@@ -378,8 +410,10 @@ class _KeycloakButton extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: isLoading
-                ? [AppThemeColors.accent.withValues(alpha: 0.5),
-                   AppThemeColors.accent.withValues(alpha: 0.5)]
+                ? [
+                    AppThemeColors.accent.withValues(alpha: 0.5),
+                    AppThemeColors.accent.withValues(alpha: 0.5),
+                  ]
                 : [AppThemeColors.accent, const Color(0xFF138F6F)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -408,7 +442,11 @@ class _KeycloakButton extends StatelessWidget {
                 ),
               )
             else
-              const Icon(CupertinoIcons.lock_fill, color: Colors.white, size: 16),
+              const Icon(
+                CupertinoIcons.lock_fill,
+                color: Colors.white,
+                size: 16,
+              ),
             const SizedBox(width: 10),
             Text(
               isLoading ? 'Connexion en cours…' : 'Continuer avec Keycloak',
@@ -420,6 +458,30 @@ class _KeycloakButton extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Lien d'aide Keycloak ────────────────────────────────────────────────────
+class _HelpLink extends StatelessWidget {
+  const _HelpLink({required this.label, required this.uri});
+
+  final String label;
+  final Uri uri;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => OAuthBrowserHelper.openPopup(uri.toString()),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          color: AppThemeColors.accent,
+          decoration: TextDecoration.underline,
+          decorationColor: AppThemeColors.accent.withValues(alpha: 0.4),
         ),
       ),
     );

@@ -11,10 +11,12 @@ import '../../shared/models/chat_message.dart';
 import '../../shared/models/conversation.dart';
 
 final libreChatApiProvider = Provider<LibreChatApiService>((ref) {
-  final auth = ref.watch(authControllerProvider);
+  final accessToken = ref.watch(
+    authControllerProvider.select((auth) => auth.session?.accessToken),
+  );
   return LibreChatApiService(
     baseUrl: BackendConfig.baseUrl,
-    accessToken: auth.session?.accessToken,
+    accessToken: accessToken,
   );
 });
 
@@ -52,7 +54,9 @@ class LibreChatApiService {
 
   Future<Map<String, dynamic>> fetchConfig() async {
     final uri = _uri('/api/config');
-    final response = await http.get(uri, headers: _jsonHeaders);
+    final response = await http
+        .get(uri, headers: _jsonHeaders)
+        .timeout(const Duration(seconds: 10));
     if (response.statusCode != 200) {
       throw Exception(
         'Impossible de charger la configuration : ${response.statusCode}',

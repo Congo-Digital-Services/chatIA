@@ -3,18 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/services/oauth_browser_helper.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../providers/auth_state_provider.dart';
 
-/// Page intermédiaire qui gère le retour du navigateur depuis Keycloak.
+/// Page de callback OAuth.
 ///
-/// Keycloak redirige vers :
-///   `<origin>/#/oauth/openid/callback?code=xxx&state=yyy`
-///
-/// GoRouter parse `/oauth/openid/callback` comme chemin et `code`/`state` comme
-/// paramètres de requête. Cette page échange le code contre les tokens,
-/// puis redirige vers `/chat` (succès) ou `/login` (erreur).
+/// Keycloak redirige vers l'app Flutter après auth.
+/// GoRouter parse le code et le state depuis l'URL.
+/// Cette page échange le code contre les tokens Keycloak.
 class OAuthCallbackPage extends ConsumerStatefulWidget {
   const OAuthCallbackPage({
     super.key,
@@ -39,32 +35,16 @@ class _OAuthCallbackPageState extends ConsumerState<OAuthCallbackPage> {
 
   Future<void> _exchange() async {
     if (widget.code.isEmpty || widget.state.isEmpty) {
-      // Paramètres manquants — retour à la page de connexion.
       if (mounted) context.go('/login');
       return;
     }
 
-    await ref
-        .read(authControllerProvider)
-        .handleOAuthCallback(widget.code, widget.state);
+    final authController = ref.read(authControllerProvider);
+    await authController.handleOAuthCallback(widget.code, widget.state);
 
     if (!mounted) return;
 
-    final auth = ref.read(authControllerProvider);
-    if (OAuthBrowserHelper.hasOpener()) {
-      OAuthBrowserHelper.postMessageToOpener(
-        {
-          'type': 'oauth_popup_result',
-          'success': auth.isAuthenticated,
-          if (!auth.isAuthenticated && auth.errorMessage != null)
-            'error': auth.errorMessage,
-        },
-      );
-      OAuthBrowserHelper.closeWindow();
-      return;
-    }
-
-    if (auth.isAuthenticated) {
+    if (authController.isAuthenticated) {
       context.go('/chat');
     } else {
       context.go('/login');
