@@ -9,14 +9,15 @@ import 'oauth_browser_helper.dart';
 import 'pkce_utils.dart';
 import 'token_storage_service.dart';
 
-/// Service d'authentification SSO Keycloak — Web natif.
+/// Service d'authentification SSO Keycloak.
 ///
 /// Flux : Authorization Code + PKCE (RFC 7636), sans flutter_appauth.
 ///
 /// 1. [signInWithSso]        → génère PKCE, redirige vers Keycloak.
 /// 2. [handleOAuthCallback]  → échange le code contre les tokens via HTTP.
 ///
-/// Compatible Flutter Web (dart:html via import conditionnel).
+/// Implémentation complète sur Flutter Web (dart:html via import conditionnel).
+/// Sur mobile, le flux de retour par deep link n'est pas encore implémenté.
 class KeycloakAuthService implements AuthService {
   KeycloakAuthService({required this.storage});
 
@@ -24,10 +25,43 @@ class KeycloakAuthService implements AuthService {
 
   static const _kVerifierKey = '_pkce_verifier';
   static const _kStateKey = '_oauth_state';
+  static const _sessionRefreshSkew = Duration(minutes: 1);
 
   // ── Restore session depuis le stockage sécurisé ───────────────────────────
   @override
-  Future<AuthSession?> restoreSession() => storage.readSession();
+  Future<AuthSession?> restoreSession() async {
+    final session = await storage.readSession();
+    if (session == null) {
+      return null;
+    }
+
+    if (session.isMock) {
+      if (session.isExpired) {
+        await storage.clear();
+        return null;
+      }
+      return session;
+    }
+
+    if (!session.willExpireWithin(_sessionRefreshSkew)) {
+      return session;
+    }
+
+    final refreshToken = session.refreshToken;
+    if (refreshToken == null || refreshToken.isEmpty) {
+      await storage.clear();
+      return null;
+    }
+
+    try {
+      final refreshed = await _refreshSession(refreshToken);
+      await storage.saveSession(refreshed);
+      return refreshed;
+    } catch (_) {
+      await storage.clear();
+      return null;
+    }
+  }
 
   // ── Lancement du flux SSO ─────────────────────────────────────────────────
   /// Retourne [null] sur le Web (redirection navigateur vers Keycloak).
@@ -39,6 +73,13 @@ class KeycloakAuthService implements AuthService {
       final session = AuthSession.mock();
       await storage.saveSession(session);
       return session;
+    }
+
+    if (!kIsWeb) {
+      throw UnsupportedError(
+        'Le SSO mobile n\'est pas encore implémenté. '
+        'Le client actuel prend uniquement en charge le flux web.',
+      );
     }
 
     // Génère PKCE.
@@ -65,7 +106,7 @@ class KeycloakAuthService implements AuthService {
       },
     );
 
-    if (kIsWeb && usePopup) {
+    if (usePopup) {
       OAuthBrowserHelper.openPopup(authUrl.toString());
     } else {
       OAuthBrowserHelper.redirectTo(authUrl.toString());
@@ -125,33 +166,7 @@ class KeycloakAuthService implements AuthService {
       throw Exception('Token d\'accès absent dans la réponse Keycloak.');
     }
 
-    final idToken = tokenData['id_token'] as String?;
-    final refreshToken = tokenData['refresh_token'] as String?;
-    final expiresIn = tokenData['expires_in'] as int? ?? 3600;
-
-    // Décode le JWT pour extraire les claims utilisateur.
-    final claims = _decodeJwtClaims(idToken ?? accessToken);
-
-    final userName =
-        (claims['name'] as String?) ??
-        (claims['preferred_username'] as String?) ??
-        (claims['given_name'] as String?) ??
-        'Utilisateur SSO';
-
-    final email =
-        (claims['email'] as String?) ??
-        (claims['sub'] as String?) ??
-        'sso.user@conduit.local';
-
-    final session = AuthSession(
-      accessToken: accessToken,
-      refreshToken: refreshToken,
-      idToken: idToken,
-      userName: userName,
-      email: email,
-      expiresAt: DateTime.now().add(Duration(seconds: expiresIn)),
-      isMock: false,
-    );
+    final session = _sessionFromTokenPayload(tokenData);
 
     await storage.saveSession(session);
     return session;
@@ -178,6 +193,74 @@ class KeycloakAuthService implements AuthService {
     } finally {
       await storage.clear();
     }
+  }
+
+  Future<AuthSession> _refreshSession(String refreshToken) async {
+    final tokenResponse = await http.post(
+      Uri.parse(
+        '${KeycloakConfig.issuer}/protocol/openid-connect/token',
+      ),
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: {
+        'grant_type': 'refresh_token',
+        'client_id': KeycloakConfig.clientId,
+        if (KeycloakConfig.clientSecret.isNotEmpty)
+          'client_secret': KeycloakConfig.clientSecret,
+        'refresh_token': refreshToken,
+      },
+    );
+
+    if (tokenResponse.statusCode != 200) {
+      throw Exception(
+        'Erreur refresh Keycloak '
+        '(${tokenResponse.statusCode}) : ${tokenResponse.body}',
+      );
+    }
+
+    final tokenData = jsonDecode(tokenResponse.body) as Map<String, dynamic>;
+    return _sessionFromTokenPayload(
+      tokenData,
+      fallbackRefreshToken: refreshToken,
+    );
+  }
+
+  AuthSession _sessionFromTokenPayload(
+    Map<String, dynamic> tokenData, {
+    String? fallbackRefreshToken,
+  }) {
+    final accessToken = tokenData['access_token'] as String?;
+
+    if (accessToken == null || accessToken.isEmpty) {
+      throw Exception('Token d\'accès absent dans la réponse Keycloak.');
+    }
+
+    final idToken = tokenData['id_token'] as String?;
+    final refreshToken =
+        tokenData['refresh_token'] as String? ?? fallbackRefreshToken;
+    final expiresIn = tokenData['expires_in'] as int? ?? 3600;
+
+    final claims = _decodeJwtClaims(idToken ?? accessToken);
+
+    final userName =
+        (claims['name'] as String?) ??
+        (claims['preferred_username'] as String?) ??
+        (claims['given_name'] as String?) ??
+        'Utilisateur SSO';
+
+    final email =
+        (claims['email'] as String?) ??
+        (claims['sub'] as String?) ??
+        'sso.user@conduit.local';
+
+    return AuthSession(
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+      idToken: idToken,
+      userName: userName,
+      email: email,
+      expiresAt: DateTime.now().add(Duration(seconds: expiresIn)),
+      isMock: false,
+    );
   }
 
   // ── Helper : décodage JWT payload (base64url) ─────────────────────────────

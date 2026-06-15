@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -260,6 +261,11 @@ class _AuthCard extends ConsumerWidget {
                 : () => ref.read(authControllerProvider).signInWithSso(),
           ),
 
+          if (KeycloakConfig.isConfigured && kIsWeb) ...[
+            const SizedBox(height: 14),
+            _AuthLinks(theme: theme),
+          ],
+
           // ── Erreur ────────────────────────────────────────────────────────
           if (auth.errorMessage != null) ...[
             const SizedBox(height: 12),
@@ -267,6 +273,47 @@ class _AuthCard extends ConsumerWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _AuthLinks extends StatelessWidget {
+  const _AuthLinks({required this.theme});
+
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    final registrationUrl = KeycloakConfig.registrationUrl;
+    final forgotPasswordUrl = KeycloakConfig.forgotPasswordUrl;
+
+    if (registrationUrl.isEmpty && forgotPasswordUrl.isEmpty) {
+      return Text(
+        'La connexion mot de passe, l\'inscription et la réinitialisation '
+        'se font sur la page SSO Keycloak.',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: AppThemeColors.textMuted,
+          height: 1.4,
+        ),
+      );
+    }
+
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        if (registrationUrl.isNotEmpty)
+          _SecondaryAuthButton(
+            label: 'Créer un compte',
+            onTap: () => OAuthBrowserHelper.redirectTo(registrationUrl),
+          ),
+        if (forgotPasswordUrl.isNotEmpty)
+          _SecondaryAuthButton(
+            label: 'Mot de passe oublié',
+            onTap: () => OAuthBrowserHelper.redirectTo(forgotPasswordUrl),
+          ),
+      ],
     );
   }
 }
@@ -420,6 +467,38 @@ class _KeycloakButton extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SecondaryAuthButton extends StatelessWidget {
+  const _SecondaryAuthButton({
+    required this.label,
+    required this.onTap,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppThemeColors.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppThemeColors.stroke),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: AppThemeColors.textSoft,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );

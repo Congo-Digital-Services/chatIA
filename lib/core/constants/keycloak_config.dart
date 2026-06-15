@@ -13,16 +13,55 @@ class KeycloakConfig {
   // KEYCLOAK
   // ---------------------------------------------------------------------------
 
-  static const keycloakBaseUrl = 'https://auth.congo-digital.com';
+  static const keycloakBaseUrl = String.fromEnvironment(
+    'KEYCLOAK_BASE_URL',
+    defaultValue: 'https://auth.congo-digital.com',
+  );
 
-  static const realm = 'OpenWebUI';
+  static const realm = String.fromEnvironment(
+    'KEYCLOAK_REALM',
+    defaultValue: 'OpenWebUI',
+  );
 
-  static const clientId = 'librechat';
+  static const clientId = String.fromEnvironment(
+    'KEYCLOAK_CLIENT_ID',
+    defaultValue: 'librechat',
+  );
 
   /// Pour les tests uniquement.
   /// En production, injecter via --dart-define.
   static const clientSecret = String.fromEnvironment(
     'KEYCLOAK_CLIENT_SECRET',
+    defaultValue: '',
+  );
+
+  static const webRedirectOrigin = String.fromEnvironment(
+    'KEYCLOAK_WEB_REDIRECT_ORIGIN',
+    defaultValue: '',
+  );
+
+  static const mobileRedirectScheme = String.fromEnvironment(
+    'KEYCLOAK_MOBILE_REDIRECT_SCHEME',
+    defaultValue: 'chatia',
+  );
+
+  static const mobileRedirectHost = String.fromEnvironment(
+    'KEYCLOAK_MOBILE_REDIRECT_HOST',
+    defaultValue: 'oauth',
+  );
+
+  static const logoutRedirectPath = String.fromEnvironment(
+    'KEYCLOAK_LOGOUT_REDIRECT_PATH',
+    defaultValue: '/login',
+  );
+
+  static const registrationUrl = String.fromEnvironment(
+    'KEYCLOAK_REGISTRATION_URL',
+    defaultValue: '',
+  );
+
+  static const forgotPasswordUrl = String.fromEnvironment(
+    'KEYCLOAK_FORGOT_PASSWORD_URL',
     defaultValue: '',
   );
 
@@ -40,18 +79,24 @@ class KeycloakConfig {
 
   static String get redirectUri {
     if (kIsWeb) {
-      return '${Uri.base.origin}$callbackPath';
+      final origin = webRedirectOrigin.isNotEmpty
+          ? webRedirectOrigin
+          : Uri.base.origin;
+      return '$origin$callbackPath';
     }
 
-    return 'chatia://oauth/openid/callback';
+    return '$mobileRedirectScheme://$mobileRedirectHost/openid/callback';
   }
 
   static String get logoutRedirectUri {
     if (kIsWeb) {
-      return '${Uri.base.origin}/login';
+      final origin = webRedirectOrigin.isNotEmpty
+          ? webRedirectOrigin
+          : Uri.base.origin;
+      return '$origin$logoutRedirectPath';
     }
 
-    return 'chatia://login';
+    return '$mobileRedirectScheme://login';
   }
 
   static String get issuer =>
