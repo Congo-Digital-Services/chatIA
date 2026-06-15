@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/services/oauth_browser_helper.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../providers/auth_state_provider.dart';
 
@@ -40,27 +39,12 @@ class _OAuthCallbackPageState extends ConsumerState<OAuthCallbackPage> {
       return;
     }
 
-    await ref
-        .read(authControllerProvider)
-        .handleOAuthCallback(widget.code, widget.state);
+    final authController = ref.read(authControllerProvider);
+    await authController.handleOAuthCallback(widget.code, widget.state);
 
     if (!mounted) return;
 
-    final auth = ref.read(authControllerProvider);
-    if (OAuthBrowserHelper.hasOpener()) {
-      OAuthBrowserHelper.postMessageToOpener(
-        {
-          'type': 'oauth_popup_result',
-          'success': auth.isAuthenticated,
-          if (!auth.isAuthenticated && auth.errorMessage != null)
-            'error': auth.errorMessage,
-        },
-      );
-      OAuthBrowserHelper.closeWindow();
-      return;
-    }
-
-    if (auth.isAuthenticated) {
+    if (authController.isAuthenticated) {
       context.go('/chat');
     } else {
       context.go('/login');
