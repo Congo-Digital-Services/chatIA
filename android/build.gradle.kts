@@ -19,6 +19,27 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+subprojects {
+    val forceCompileSdk = {
+        extensions.findByName("android")?.let { androidExtension ->
+            val compileSdkSetter = androidExtension.javaClass.methods.find { method ->
+                method.name == "setCompileSdkVersion" &&
+                    method.parameterTypes.size == 1 &&
+                    method.parameterTypes[0] == Int::class.javaPrimitiveType
+            }
+            compileSdkSetter?.invoke(androidExtension, 36)
+        }
+    }
+
+    if (state.executed) {
+        forceCompileSdk()
+    } else {
+        afterEvaluate {
+            forceCompileSdk()
+        }
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
