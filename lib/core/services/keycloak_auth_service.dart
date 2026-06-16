@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:http/http.dart' as http;
 
 import '../constants/keycloak_config.dart';
@@ -9,66 +10,31 @@ import 'oauth_browser_helper.dart';
 import 'pkce_utils.dart';
 import 'token_storage_service.dart';
 
-/// Service d'authentification SSO Keycloak.
+/// Service d'authentification SSO — flux OAuth2 Authorization Code + PKCE.
 ///
-/// Flux : Authorization Code + PKCE (RFC 7636), sans flutter_appauth.
-///
-/// 1. [signInWithSso]        → génère PKCE, redirige vers Keycloak.
-/// 2. [handleOAuthCallback]  → échange le code contre les tokens via HTTP.
-///
-/// Implémentation complète sur Flutter Web (dart:html via import conditionnel).
-/// Sur mobile, le flux de retour par deep link n'est pas encore implémenté.
+/// Flux :
+///   1. [signInWithSso] → construit l'URL Keycloak avec code_challenge PKCE
+///      → redirige le navigateur vers Keycloak.
+///   2. L'utilisateur s'authentifie sur Keycloak.
+///   3. Keycloak redirige vers /oauth/openid/callback de ChatIA (cette app).
+///   4. [handleOAuthCallback] → échange le code contre les tokens Keycloak.
+///   5. La session est sauvegardée et l'app navigue vers /chat.
 class KeycloakAuthService implements AuthService {
   KeycloakAuthService({required this.storage});
 
   final TokenStorageService storage;
+  final FlutterAppAuth _appAuth = const FlutterAppAuth();
 
-  static const _kVerifierKey = '_pkce_verifier';
-  static const _kStateKey = '_oauth_state';
-  static const _sessionRefreshSkew = Duration(minutes: 1);
+  static const _pkceVerifierKey = 'pkce_verifier';
+  static const _oauthStateKey = 'oauth_state';
 
-  // ── Restore session depuis le stockage sécurisé ───────────────────────────
+  // ── Restore session ──────────────────────────────────────────────────────
   @override
-  Future<AuthSession?> restoreSession() async {
-    final session = await storage.readSession();
-    if (session == null) {
-      return null;
-    }
+  Future<AuthSession?> restoreSession() => storage.readSession();
 
-    if (session.isMock) {
-      if (session.isExpired) {
-        await storage.clear();
-        return null;
-      }
-      return session;
-    }
-
-    if (!session.willExpireWithin(_sessionRefreshSkew)) {
-      return session;
-    }
-
-    final refreshToken = session.refreshToken;
-    if (refreshToken == null || refreshToken.isEmpty) {
-      await storage.clear();
-      return null;
-    }
-
-    try {
-      final refreshed = await _refreshSession(refreshToken);
-      await storage.saveSession(refreshed);
-      return refreshed;
-    } catch (_) {
-      await storage.clear();
-      return null;
-    }
-  }
-
-  // ── Lancement du flux SSO ─────────────────────────────────────────────────
-  /// Retourne [null] sur le Web (redirection navigateur vers Keycloak).
-  /// Retourne une [AuthSession] de maquette si Keycloak n'est pas configuré.
+  // ── Lancement du flux SSO direct Keycloak (PKCE) ─────────────────────────
   @override
   Future<AuthSession?> signInWithSso({bool usePopup = false}) async {
-    // Mode maquette si Keycloak n'est pas configuré (ex : dev sans serveur).
     if (!KeycloakConfig.isConfigured) {
       final session = AuthSession.mock();
       await storage.saveSession(session);
@@ -76,183 +42,158 @@ class KeycloakAuthService implements AuthService {
     }
 
     if (!kIsWeb) {
-      throw UnsupportedError(
-        'Le SSO mobile n\'est pas encore implémenté. '
-        'Le client actuel prend uniquement en charge le flux web.',
-      );
+      return _signInWithMobileAppAuth();
     }
 
-    // Génère PKCE.
+    // 1. Générer code_verifier, code_challenge et state CSRF
     final verifier = PkceUtils.generateCodeVerifier();
     final challenge = PkceUtils.generateCodeChallenge(verifier);
-    final state = PkceUtils.generateState();
+    final oauthState = PkceUtils.generateState();
 
-    // Sauvegarde dans sessionStorage pour récupération au callback.
-    OAuthBrowserHelper.saveToSession(_kVerifierKey, verifier);
-    OAuthBrowserHelper.saveToSession(_kStateKey, state);
-
-    // Construit l'URL d'autorisation Keycloak.
-    final authUrl = Uri.parse(
-      '${KeycloakConfig.issuer}/protocol/openid-connect/auth',
-    ).replace(
-      queryParameters: {
-        'response_type': 'code',
-        'client_id': KeycloakConfig.clientId,
-        'redirect_uri': KeycloakConfig.redirectUri,
-        'scope': KeycloakConfig.scopes.join(' '),
-        'state': state,
-        'code_challenge': challenge,
-        'code_challenge_method': 'S256',
-      },
-    );
-
-    if (usePopup) {
-      OAuthBrowserHelper.openPopup(authUrl.toString());
-    } else {
-      OAuthBrowserHelper.redirectTo(authUrl.toString());
+    // 2. Persister verifier + state pour les relire au callback
+    if (kIsWeb) {
+      OAuthBrowserHelper.saveToSession(_pkceVerifierKey, verifier);
+      OAuthBrowserHelper.saveToSession(_oauthStateKey, oauthState);
     }
 
-    // Retourne null : la session sera créée dans [handleOAuthCallback].
+    // 3. Construire l'URL d'autorisation Keycloak
+    final authUri =
+        Uri.parse(
+          '${KeycloakConfig.issuer}/protocol/openid-connect/auth',
+        ).replace(
+          queryParameters: {
+            'client_id': KeycloakConfig.clientId,
+            'redirect_uri': KeycloakConfig.redirectUri,
+            'response_type': 'code',
+            'scope': KeycloakConfig.scopes.join(' '),
+            'state': oauthState,
+            'code_challenge': challenge,
+            'code_challenge_method': 'S256',
+          },
+        );
+
+    // 4. Redirection directe vers Keycloak (pas de popup)
+    OAuthBrowserHelper.redirectTo(authUri.toString());
+
     return null;
   }
 
-  // ── Traitement du callback OAuth2 ─────────────────────────────────────────
-  /// Appelé depuis [OAuthCallbackPage] après le retour de Keycloak.
+  Future<AuthSession> _signInWithMobileAppAuth() async {
+    final request = AuthorizationTokenRequest(
+      KeycloakConfig.clientId,
+      KeycloakConfig.redirectUri,
+      issuer: KeycloakConfig.issuer,
+      discoveryUrl: KeycloakConfig.discoveryEndpoint,
+      scopes: KeycloakConfig.scopes,
+      clientSecret: KeycloakConfig.clientSecret.isNotEmpty
+          ? KeycloakConfig.clientSecret
+          : null,
+    );
+
+    final result = await _appAuth.authorizeAndExchangeCode(request);
+    if (result.accessToken == null || result.accessToken!.isEmpty) {
+      throw Exception('Aucun token reçu depuis Keycloak.');
+    }
+
+    final accessToken = result.accessToken!;
+    final refreshToken = result.refreshToken;
+    final idToken = result.idToken;
+    final expiresAt =
+        result.accessTokenExpirationDateTime ??
+        DateTime.now().add(const Duration(hours: 1));
+
+    final userInfo = _decodeJwtPayload(idToken ?? accessToken);
+    final userName =
+        (userInfo['preferred_username'] ??
+                userInfo['name'] ??
+                userInfo['email'] ??
+                'Utilisateur')
+            as String;
+    final email = (userInfo['email'] ?? '') as String;
+
+    final session = AuthSession(
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+      idToken: idToken,
+      userName: userName,
+      email: email,
+      expiresAt: expiresAt,
+      isMock: false,
+    );
+
+    await storage.saveSession(session);
+    return session;
+  }
+
+  // ── Traitement du callback OAuth2 (échange code → tokens) ────────────────
   @override
   Future<AuthSession> handleOAuthCallback(String code, String state) async {
-    // Vérifie l'état anti-CSRF.
-    final savedState = OAuthBrowserHelper.readFromSession(_kStateKey);
-    final verifier = OAuthBrowserHelper.readFromSession(_kVerifierKey);
-
-    // Nettoie immédiatement sessionStorage.
-    OAuthBrowserHelper.removeFromSession(_kStateKey);
-    OAuthBrowserHelper.removeFromSession(_kVerifierKey);
-
-    if (savedState == null || savedState != state) {
-      throw Exception('État OAuth invalide — possible attaque CSRF.');
+    if (!kIsWeb) {
+      throw Exception(
+        'Le callback OAuth web ne doit pas être utilisé sur mobile.',
+      );
     }
+
+    // 1. Relire le verifier PKCE et le state stockés avant la redirection
+    final verifier = OAuthBrowserHelper.readFromSession(_pkceVerifierKey);
+    final savedState = OAuthBrowserHelper.readFromSession(_oauthStateKey);
+
     if (verifier == null || verifier.isEmpty) {
-      throw Exception('Code verifier PKCE manquant.');
+      throw Exception('Verifier PKCE introuvable. Veuillez réessayer.');
+    }
+    if (savedState != null && savedState.isNotEmpty && savedState != state) {
+      throw Exception(
+        'State OAuth invalide (risque CSRF). Veuillez réessayer.',
+      );
     }
 
-    // Échange le code contre les tokens.
-    final tokenResponse = await http.post(
-      Uri.parse(
-        '${KeycloakConfig.issuer}/protocol/openid-connect/token',
-      ),
+    // 2. Nettoyer le sessionStorage
+    OAuthBrowserHelper.removeFromSession(_pkceVerifierKey);
+    OAuthBrowserHelper.removeFromSession(_oauthStateKey);
+
+    // 3. Échanger le code contre les tokens via le token endpoint Keycloak
+    final tokenEndpoint = Uri.parse(
+      '${KeycloakConfig.issuer}/protocol/openid-connect/token',
+    );
+
+    final response = await http.post(
+      tokenEndpoint,
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: {
         'grant_type': 'authorization_code',
         'client_id': KeycloakConfig.clientId,
-        if (KeycloakConfig.clientSecret.isNotEmpty)
-          'client_secret': KeycloakConfig.clientSecret,
+        'client_secret': KeycloakConfig.clientSecret,
         'code': code,
         'redirect_uri': KeycloakConfig.redirectUri,
         'code_verifier': verifier,
       },
     );
 
-    if (tokenResponse.statusCode != 200) {
+    if (response.statusCode != 200) {
       throw Exception(
-        'Erreur Keycloak (${tokenResponse.statusCode}) : ${tokenResponse.body}',
+        'Erreur token Keycloak (${response.statusCode}): ${response.body}',
       );
     }
 
-    final tokenData =
-        jsonDecode(tokenResponse.body) as Map<String, dynamic>;
-    final accessToken = tokenData['access_token'] as String?;
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
 
-    if (accessToken == null) {
-      throw Exception('Token d\'accès absent dans la réponse Keycloak.');
-    }
+    // 4. Décoder le JWT access_token pour extraire les infos utilisateur
+    final accessToken = json['access_token'] as String;
+    final refreshToken = json['refresh_token'] as String?;
+    final idToken = json['id_token'] as String?;
+    final expiresIn = json['expires_in'] as int? ?? 3600;
 
-    final session = _sessionFromTokenPayload(tokenData);
-
-    await storage.saveSession(session);
-    return session;
-  }
-
-  // ── Sign out + end_session Keycloak ───────────────────────────────────────
-  @override
-  Future<void> signOut({String? idTokenHint}) async {
-    try {
-      if (idTokenHint != null && KeycloakConfig.isConfigured) {
-        // Redirige vers l'endpoint de déconnexion Keycloak.
-        final logoutUrl = Uri.parse(
-          '${KeycloakConfig.issuer}/protocol/openid-connect/logout',
-        ).replace(
-          queryParameters: {
-            'id_token_hint': idTokenHint,
-            'post_logout_redirect_uri': KeycloakConfig.logoutRedirectUri,
-          },
-        );
-        OAuthBrowserHelper.redirectTo(logoutUrl.toString());
-      }
-    } catch (_) {
-      // Si la redirection échoue, on nettoie quand même le stockage local.
-    } finally {
-      await storage.clear();
-    }
-  }
-
-  Future<AuthSession> _refreshSession(String refreshToken) async {
-    final tokenResponse = await http.post(
-      Uri.parse(
-        '${KeycloakConfig.issuer}/protocol/openid-connect/token',
-      ),
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: {
-        'grant_type': 'refresh_token',
-        'client_id': KeycloakConfig.clientId,
-        if (KeycloakConfig.clientSecret.isNotEmpty)
-          'client_secret': KeycloakConfig.clientSecret,
-        'refresh_token': refreshToken,
-      },
-    );
-
-    if (tokenResponse.statusCode != 200) {
-      throw Exception(
-        'Erreur refresh Keycloak '
-        '(${tokenResponse.statusCode}) : ${tokenResponse.body}',
-      );
-    }
-
-    final tokenData = jsonDecode(tokenResponse.body) as Map<String, dynamic>;
-    return _sessionFromTokenPayload(
-      tokenData,
-      fallbackRefreshToken: refreshToken,
-    );
-  }
-
-  AuthSession _sessionFromTokenPayload(
-    Map<String, dynamic> tokenData, {
-    String? fallbackRefreshToken,
-  }) {
-    final accessToken = tokenData['access_token'] as String?;
-
-    if (accessToken == null || accessToken.isEmpty) {
-      throw Exception('Token d\'accès absent dans la réponse Keycloak.');
-    }
-
-    final idToken = tokenData['id_token'] as String?;
-    final refreshToken =
-        tokenData['refresh_token'] as String? ?? fallbackRefreshToken;
-    final expiresIn = tokenData['expires_in'] as int? ?? 3600;
-
-    final claims = _decodeJwtClaims(idToken ?? accessToken);
-
+    final userInfo = _decodeJwtPayload(accessToken);
     final userName =
-        (claims['name'] as String?) ??
-        (claims['preferred_username'] as String?) ??
-        (claims['given_name'] as String?) ??
-        'Utilisateur SSO';
+        (userInfo['preferred_username'] ??
+                userInfo['name'] ??
+                userInfo['email'] ??
+                'Utilisateur')
+            as String;
+    final email = (userInfo['email'] ?? '') as String;
 
-    final email =
-        (claims['email'] as String?) ??
-        (claims['sub'] as String?) ??
-        'sso.user@conduit.local';
-
-    return AuthSession(
+    // 5. Construire et sauvegarder la session
+    final session = AuthSession(
       accessToken: accessToken,
       refreshToken: refreshToken,
       idToken: idToken,
@@ -261,23 +202,56 @@ class KeycloakAuthService implements AuthService {
       expiresAt: DateTime.now().add(Duration(seconds: expiresIn)),
       isMock: false,
     );
+
+    await storage.saveSession(session);
+    return session;
   }
 
-  // ── Helper : décodage JWT payload (base64url) ─────────────────────────────
-  static Map<String, dynamic> _decodeJwtClaims(String token) {
+  /// Décode la partie payload d'un JWT (base64url, pas de vérification sig).
+  Map<String, dynamic> _decodeJwtPayload(String jwt) {
     try {
-      final parts = token.split('.');
+      final parts = jwt.split('.');
       if (parts.length < 2) return {};
-      String payload = parts[1];
-      // Normalise base64url → base64 standard.
-      payload = payload.replaceAll('-', '+').replaceAll('_', '/');
-      while (payload.length % 4 != 0) {
-        payload += '=';
-      }
-      final decoded = utf8.decode(base64Decode(payload));
+      var payload = parts[1];
+      // Padding base64
+      payload += '=' * ((4 - payload.length % 4) % 4);
+      final decoded = utf8.decode(base64Url.decode(payload));
       return jsonDecode(decoded) as Map<String, dynamic>;
     } catch (_) {
       return {};
+    }
+  }
+
+  // ── Déconnexion ──────────────────────────────────────────────────────────
+  @override
+  Future<void> signOut({String? idTokenHint}) async {
+    try {
+      if (kIsWeb) {
+        final logoutUri =
+            Uri.parse(
+              '${KeycloakConfig.issuer}/protocol/openid-connect/logout',
+            ).replace(
+              queryParameters: {
+                'client_id': KeycloakConfig.clientId,
+                if (idTokenHint?.isNotEmpty ?? false)
+                  'id_token_hint': idTokenHint!,
+                'post_logout_redirect_uri': KeycloakConfig.logoutRedirectUri,
+              },
+            );
+        OAuthBrowserHelper.redirectTo(logoutUri.toString());
+      } else if (idTokenHint != null && idTokenHint.isNotEmpty) {
+        await _appAuth.endSession(
+          EndSessionRequest(
+            idTokenHint: idTokenHint,
+            postLogoutRedirectUrl: KeycloakConfig.logoutRedirectUri,
+            issuer: KeycloakConfig.issuer,
+            discoveryUrl: KeycloakConfig.discoveryEndpoint,
+          ),
+        );
+      }
+    } catch (_) {
+    } finally {
+      await storage.clear();
     }
   }
 }
