@@ -90,39 +90,49 @@ class KeycloakAuthService implements AuthService {
           : null,
     );
 
-    final result = await _appAuth.authorizeAndExchangeCode(request);
-    if (result.accessToken == null || result.accessToken!.isEmpty) {
-      throw Exception('Aucun token reçu depuis Keycloak.');
+    try {
+      final result = await _appAuth.authorizeAndExchangeCode(request);
+      if (result.accessToken == null || result.accessToken!.isEmpty) {
+        throw Exception('Aucun token reçu depuis Keycloak.');
+      }
+
+      final accessToken = result.accessToken!;
+      final refreshToken = result.refreshToken;
+      final idToken = result.idToken;
+      final expiresAt =
+          result.accessTokenExpirationDateTime ??
+          DateTime.now().add(const Duration(hours: 1));
+
+      final userInfo = _decodeJwtPayload(idToken ?? accessToken);
+      final userName =
+          (userInfo['preferred_username'] ??
+                  userInfo['name'] ??
+                  userInfo['email'] ??
+                  'Utilisateur')
+              as String;
+      final email = (userInfo['email'] ?? '') as String;
+
+      final session = AuthSession(
+        accessToken: accessToken,
+        refreshToken: refreshToken,
+        idToken: idToken,
+        userName: userName,
+        email: email,
+        expiresAt: expiresAt,
+        isMock: false,
+      );
+
+      await storage.saveSession(session);
+      return session;
+    } on FlutterAppAuthUserCancelledException catch (error) {
+      final details = _formatPlatformErrorDetails(error.platformErrorDetails);
+      debugPrint('SSO AppAuth cancelled: $details');
+      throw Exception('Connexion SSO annulée. $details');
+    } on FlutterAppAuthPlatformException catch (error) {
+      final details = _formatPlatformErrorDetails(error.platformErrorDetails);
+      debugPrint('SSO AppAuth failure: $details');
+      throw Exception('Erreur SSO Android/iOS. $details');
     }
-
-    final accessToken = result.accessToken!;
-    final refreshToken = result.refreshToken;
-    final idToken = result.idToken;
-    final expiresAt =
-        result.accessTokenExpirationDateTime ??
-        DateTime.now().add(const Duration(hours: 1));
-
-    final userInfo = _decodeJwtPayload(idToken ?? accessToken);
-    final userName =
-        (userInfo['preferred_username'] ??
-                userInfo['name'] ??
-                userInfo['email'] ??
-                'Utilisateur')
-            as String;
-    final email = (userInfo['email'] ?? '') as String;
-
-    final session = AuthSession(
-      accessToken: accessToken,
-      refreshToken: refreshToken,
-      idToken: idToken,
-      userName: userName,
-      email: email,
-      expiresAt: expiresAt,
-      isMock: false,
-    );
-
-    await storage.saveSession(session);
-    return session;
   }
 
   // ── Traitement du callback OAuth2 (échange code → tokens) ────────────────
@@ -220,6 +230,24 @@ class KeycloakAuthService implements AuthService {
     } catch (_) {
       return {};
     }
+  }
+
+  String _formatPlatformErrorDetails(
+    FlutterAppAuthPlatformErrorDetails details,
+  ) {
+    final parts = <String>[
+      if (details.error?.isNotEmpty ?? false) 'error=${details.error}',
+      if (details.errorDescription?.isNotEmpty ?? false)
+        'description=${details.errorDescription}',
+      if (details.code?.isNotEmpty ?? false) 'code=${details.code}',
+      if (details.type?.isNotEmpty ?? false) 'type=${details.type}',
+      if (details.rootCauseDebugDescription?.isNotEmpty ?? false)
+        'rootCause=${details.rootCauseDebugDescription}',
+      if (details.errorDebugDescription?.isNotEmpty ?? false)
+        'debug=${details.errorDebugDescription}',
+    ];
+
+    return parts.isEmpty ? 'Aucun détail fourni par AppAuth.' : parts.join(' | ');
   }
 
   // ── Déconnexion ──────────────────────────────────────────────────────────
