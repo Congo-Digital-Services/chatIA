@@ -7,17 +7,19 @@ import 'package:http/http.dart' as http;
 
 import '../constants/backend_config.dart';
 import 'http_client_factory.dart';
+import 'jwt_debug_helper.dart';
 import '../../features/auth/providers/auth_state_provider.dart';
 import '../../shared/models/chat_message.dart';
 import '../../shared/models/conversation.dart';
 
 final chatiaApiProvider = Provider<ChatiaApiService>((ref) {
-  final accessToken = ref.watch(
-    authControllerProvider.select((auth) => auth.session?.accessToken),
+  final session = ref.watch(
+    authControllerProvider.select((auth) => auth.session),
   );
   return ChatiaApiService(
     baseUrl: BackendConfig.baseUrl,
-    accessToken: accessToken,
+    accessToken: session?.accessToken,
+    idToken: session?.idToken,
   );
 });
 
@@ -26,20 +28,34 @@ final chatiaConfigProvider = FutureProvider<Map<String, dynamic>>((ref) {
 });
 
 class ChatiaApiService {
-  ChatiaApiService({required this.baseUrl, this.accessToken});
+  ChatiaApiService({required this.baseUrl, this.accessToken, this.idToken});
+
+  static const defaultOpenAiModel = 'gpt-4';
 
   final String baseUrl;
   final String? accessToken;
+  final String? idToken;
 
-  bool get isAvailable => accessToken != null && accessToken!.isNotEmpty;
+  String? get _bearerToken {
+    if (idToken != null && idToken!.isNotEmpty) {
+      return idToken;
+    }
+    if (accessToken != null && accessToken!.isNotEmpty) {
+      return accessToken;
+    }
+    return null;
+  }
+
+  bool get isAvailable => _bearerToken != null;
 
   Map<String, String> get _baseHeaders {
     final headers = <String, String>{'Accept': 'application/json'};
     if (!kIsWeb) {
       headers['User-Agent'] = BackendConfig.userAgent;
     }
-    if (accessToken != null && accessToken!.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $accessToken';
+    final bearerToken = _bearerToken;
+    if (bearerToken != null) {
+      headers['Authorization'] = 'Bearer $bearerToken';
     }
     return headers;
   }
@@ -48,6 +64,35 @@ class ChatiaApiService {
     ..._baseHeaders,
     'Content-Type': 'application/json',
   };
+
+  void _logAuthDebug(String context) {
+    if (!kDebugMode) {
+      return;
+    }
+
+    final access = JwtDebugHelper.inspect(accessToken);
+    final id = JwtDebugHelper.inspect(idToken);
+    final selected = identical(_bearerToken, idToken) && idToken != null
+        ? 'idToken'
+        : identical(_bearerToken, accessToken) && accessToken != null
+        ? 'accessToken'
+        : 'none';
+    debugPrint('[ChatIA][$context] selectedBearer=$selected');
+    if (access != null) {
+      debugPrint('[ChatIA][$context] accessToken $access');
+    }
+    if (id != null) {
+      debugPrint('[ChatIA][$context] idToken $id');
+    }
+  }
+
+  void _logRequestDebug(String method, Uri uri) {
+    if (!kDebugMode) {
+      return;
+    }
+    debugPrint('[ChatIA][$method] baseUrl=$baseUrl');
+    debugPrint('[ChatIA][$method] url=$uri');
+  }
 
   Uri _uri(String path, [Map<String, String>? queryParameters]) {
     return Uri.parse('$baseUrl$path').replace(queryParameters: queryParameters);
@@ -129,6 +174,37 @@ class ChatiaApiService {
         : (jsonBody as List<dynamic>);
 
     return items.cast<Map<String, dynamic>>().map(_mapApiConversation).toList();
+  }
+
+  Future<List<String>> fetchModels() async {
+    final uri = _uri('/api/models');
+    final response = await http.get(uri, headers: _jsonHeaders);
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Impossible de charger les modèles : ${response.statusCode}',
+      );
+    }
+
+    final jsonBody = jsonDecode(response.body);
+    final items = jsonBody is Map<String, dynamic>
+        ? (jsonBody['models'] as List<dynamic>?) ?? []
+        : (jsonBody as List<dynamic>);
+
+    return items
+        .map((item) {
+          if (item is String) {
+            return item;
+          }
+          if (item is Map<String, dynamic>) {
+            return item['name']?.toString() ??
+                item['id']?.toString() ??
+                item['model']?.toString() ??
+                '';
+          }
+          return '';
+        })
+        .where((model) => model.isNotEmpty)
+        .toList();
   }
 
   Future<List<ChatMessage>> fetchMessages(String conversationId) async {
@@ -232,19 +308,12 @@ class ChatiaApiService {
     if (jsonBody is Map<String, dynamic>) {
       return _mapApiMessage(jsonBody);
     }
-    return ChatMessage(
-      id: messageId,
-      role: ChatRole.assistant,
-      text: text,
-    );
+    return ChatMessage(id: messageId, role: ChatRole.assistant, text: text);
   }
 
   /// DELETE /api/messages/:conversationId/:messageId
   /// Supprime un message précis d'une conversation.
-  Future<void> deleteMessage(
-    String conversationId,
-    String messageId,
-  ) async {
+  Future<void> deleteMessage(String conversationId, String messageId) async {
     final uri = _uri('/api/messages/$conversationId/$messageId');
     final response = await http.delete(uri, headers: _jsonHeaders);
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -259,9 +328,11 @@ class ChatiaApiService {
     required String messageId,
     required String text,
     String? conversationId,
-    String model = 'gpt-4o-mini',
+    String model = defaultOpenAiModel,
   }) async {
+    _logAuthDebug('POST /api/agents/chat/openAI');
     final uri = _uri('/api/agents/chat/openAI');
+    _logRequestDebug('POST /api/agents/chat/openAI', uri);
     final body = jsonEncode({
       'endpoint': 'openAI',
       'model': model,
@@ -462,7 +533,7 @@ class ChatiaApiService {
     required String messageId,
     required String text,
     String? conversationId,
-    String model = 'gpt-4o-mini',
+    String model = defaultOpenAiModel,
   }) async* {
     final startResponse = await startOpenAIChat(
       conversationId: conversationId,
@@ -493,7 +564,9 @@ class ChatiaApiService {
   }
 
   Stream<String> streamChat(String streamId) async* {
+    _logAuthDebug('GET /api/agents/chat/stream/$streamId');
     final uri = _uri('/api/agents/chat/stream/$streamId');
+    _logRequestDebug('GET /api/agents/chat/stream/$streamId', uri);
     final request = http.Request('GET', uri);
     request.headers.addAll(_baseHeaders);
     request.headers['Accept'] = 'text/event-stream';
