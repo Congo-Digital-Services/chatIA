@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -276,24 +277,10 @@ class _AuthCard extends ConsumerWidget {
                 : () => ref.read(authControllerProvider).signInWithSso(),
           ),
 
-          // ── Liens d'aide Keycloak ─────────────────────────────────────────
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _HelpLink(
-                label: 'Mot de passe oublié ?',
-                uri: KeycloakConfig.passwordResetUri,
-              ),
-              const SizedBox(width: 8),
-              Text('·', style: TextStyle(color: AppThemeColors.textMuted)),
-              const SizedBox(width: 8),
-              _HelpLink(
-                label: 'Créer un compte',
-                uri: KeycloakConfig.registrationUri,
-              ),
-            ],
-          ),
+          if (KeycloakConfig.isConfigured && kIsWeb) ...[
+            const SizedBox(height: 14),
+            _AuthLinks(theme: theme),
+          ],
 
           // ── Erreur ────────────────────────────────────────────────────────
           if (auth.errorMessage != null) ...[
@@ -302,6 +289,47 @@ class _AuthCard extends ConsumerWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _AuthLinks extends StatelessWidget {
+  const _AuthLinks({required this.theme});
+
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    final registrationUrl = KeycloakConfig.registrationUrl;
+    final forgotPasswordUrl = KeycloakConfig.forgotPasswordUrl;
+
+    if (registrationUrl.isEmpty && forgotPasswordUrl.isEmpty) {
+      return Text(
+        'La connexion mot de passe, l\'inscription et la réinitialisation '
+        'se font sur la page SSO Keycloak.',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: AppThemeColors.textMuted,
+          height: 1.4,
+        ),
+      );
+    }
+
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        if (registrationUrl.isNotEmpty)
+          _SecondaryAuthButton(
+            label: 'Créer un compte',
+            onTap: () => OAuthBrowserHelper.redirectTo(registrationUrl),
+          ),
+        if (forgotPasswordUrl.isNotEmpty)
+          _SecondaryAuthButton(
+            label: 'Mot de passe oublié',
+            onTap: () => OAuthBrowserHelper.redirectTo(forgotPasswordUrl),
+          ),
+      ],
     );
   }
 }
@@ -464,24 +492,32 @@ class _KeycloakButton extends StatelessWidget {
   }
 }
 
-// ── Lien d'aide Keycloak ────────────────────────────────────────────────────
-class _HelpLink extends StatelessWidget {
-  const _HelpLink({required this.label, required this.uri});
+class _SecondaryAuthButton extends StatelessWidget {
+  const _SecondaryAuthButton({
+    required this.label,
+    required this.onTap,
+  });
 
   final String label;
-  final Uri uri;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => OAuthBrowserHelper.openPopup(uri.toString()),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 12,
-          color: AppThemeColors.accent,
-          decoration: TextDecoration.underline,
-          decorationColor: AppThemeColors.accent.withValues(alpha: 0.4),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppThemeColors.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppThemeColors.stroke),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: AppThemeColors.textSoft,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );

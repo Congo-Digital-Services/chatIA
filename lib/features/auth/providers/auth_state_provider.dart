@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
+import '../../../core/constants/backend_config.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/token_storage_service.dart';
 import '../../../shared/models/auth_session.dart';
@@ -73,9 +75,9 @@ class AuthController extends ChangeNotifier {
       errorMessage = null;
       notifyListeners();
 
-      // Sur le Web : utilise une popup OAuth.
-      // En maquette ou mobile : retourne directement une AuthSession.
-      final result = await _service.signInWithSso(usePopup: kIsWeb);
+      // Le flux par redirection complète est plus robuste que la popup:
+      // pas de blocage navigateur et pas de dépendance au postMessage.
+      final result = await _service.signInWithSso(usePopup: false);
       if (result != null) {
         session = result;
       }
@@ -111,9 +113,37 @@ class AuthController extends ChangeNotifier {
 
   // ── Déconnexion ───────────────────────────────────────────────────────────
   Future<void> signOut() async {
-    await _service.signOut(idTokenHint: session?.idToken);
-    session = null;
-    errorMessage = null;
-    notifyListeners();
+    final currentSession = session;
+
+    try {
+      if (currentSession != null && !currentSession.isMock) {
+        await _signOutFromLibreChatBackend(currentSession.accessToken);
+      }
+    } catch (_) {
+      // Le logout OIDC doit quand même continuer même si LibreChat refuse.
+    } finally {
+      await _service.signOut(idTokenHint: currentSession?.idToken);
+      session = null;
+      errorMessage = null;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _signOutFromLibreChatBackend(String accessToken) async {
+    final response = await http.post(
+      Uri.parse('${BackendConfig.baseUrl}/api/auth/logout'),
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+        if (!kIsWeb) 'User-Agent': BackendConfig.userAgent,
+      },
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Impossible de fermer la session LibreChat : ${response.statusCode}',
+      );
+    }
   }
 }
