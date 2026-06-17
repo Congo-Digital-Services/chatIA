@@ -265,10 +265,8 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                 ),
               ],
               border: Border.all(
-                color: (_hasText || _attachedFile != null)
-                    ? AppThemeColors.accent.withValues(alpha: 0.5)
-                    : AppThemeColors.stroke,
-                width: (_hasText || _attachedFile != null) ? 1.5 : 1,
+                color: AppThemeColors.stroke,
+                width: 1,
               ),
             ),
             child: _isRecording
@@ -419,10 +417,11 @@ class _ComposerIconBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: AppThemeColors.pill,
+        color: Colors.transparent,
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
@@ -430,7 +429,11 @@ class _ComposerIconBtn extends StatelessWidget {
           child: SizedBox(
             width: 44,
             height: 44,
-            child: Icon(icon, size: 22, color: AppThemeColors.textStrong),
+            child: Icon(
+              icon,
+              size: 22,
+              color: isDark ? Colors.white : Colors.black,
+            ),
           ),
         ),
       ),
@@ -535,6 +538,7 @@ class _BouncingWaveformState extends State<_BouncingWaveform>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return AnimatedBuilder(
       animation: _anim,
       builder: (context, child) {
@@ -548,7 +552,7 @@ class _BouncingWaveformState extends State<_BouncingWaveform>
               width: 3,
               height: h,
               decoration: BoxDecoration(
-                color: AppThemeColors.accent,
+                color: isDark ? Colors.grey[850] : Colors.grey[200],
                 borderRadius: BorderRadius.circular(1.5),
               ),
             );

@@ -88,65 +88,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                         tooltip: 'Menu',
                       ),
                       const SizedBox(width: 10),
-                      // Sélecteur de modèle
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            // TODO: afficher le sélecteur de modèle
-                          },
-                          child: Container(
-                            height: 44,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? AppThemeColors.card
-                                  : AppThemeColors.card.withValues(alpha: 0.96),
-                              borderRadius: BorderRadius.circular(22),
-                              border: Border.all(color: AppThemeColors.stroke),
-                              boxShadow: AppThemeShadows.soft,
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  isChannel
-                                      ? conversation.title
-                                      : isNote
-                                      ? 'Bloc-notes'
-                                      : 'Kimi K2',
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: -0.2,
-                                  ),
-                                ),
-                                if (!isNote && !isChannel) ...[
-                                  const SizedBox(width: 6),
-                                  Icon(
-                                    CupertinoIcons.chevron_down,
-                                    size: 15,
-                                    color: AppThemeColors.textSoft,
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
+                      const Spacer(),
                       const SizedBox(width: 10),
-                      // Bouton d'appel vocal (uniquement si ce n'est pas une note)
-                      if (!isNote) ...[
-                        _HeaderButton(
-                          icon: CupertinoIcons.phone,
-                          onTap: () {
-                            setState(() {
-                              _isVoiceCallActive = true;
-                            });
-                          },
-                          tooltip: 'Appel vocal IA',
-                        ),
-                        const SizedBox(width: 10),
-                      ],
                       // Nouvelle conversation / note
                       _HeaderButton(
                         icon: isNote
@@ -286,14 +229,20 @@ class _HeaderButton extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: isDark
-            ? AppThemeColors.card
-            : AppThemeColors.card.withValues(alpha: 0.96),
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(22),
         child: InkWell(
           borderRadius: BorderRadius.circular(22),
           onTap: onTap,
-          child: SizedBox(width: 44, height: 44, child: Icon(icon, size: 22)),
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(
+              icon,
+              size: 22,
+              color: isDark ? Colors.white : Colors.black,
+            ),
+          ),
         ),
       ),
     );
@@ -410,7 +359,7 @@ class _ActionBtn extends StatelessWidget {
     return Tooltip(
       message: label,
       child: Material(
-        color: isDark ? AppThemeColors.cardStrong : AppThemeColors.pill,
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(22),
         child: InkWell(
           borderRadius: BorderRadius.circular(22),
@@ -418,7 +367,11 @@ class _ActionBtn extends StatelessWidget {
           child: SizedBox(
             width: 44,
             height: 44,
-            child: Icon(icon, size: 20, color: AppThemeColors.textSoft),
+            child: Icon(
+              icon,
+              size: 20,
+              color: isDark ? Colors.white70 : Colors.black54,
+            ),
           ),
         ),
       ),
@@ -667,7 +620,7 @@ class _VoiceCallOverlayState extends State<_VoiceCallOverlay>
 
               // Title and state
               Text(
-                'Kimi K2 Voice',
+                'ChatIA Voice',
                 style: theme.textTheme.headlineSmall?.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.w700,
