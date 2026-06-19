@@ -24,10 +24,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ScrollController _scrollController = ScrollController();
   bool _isVoiceCallActive = false;
+  String? _lastConversationId;
+  int _lastMessageCount = 0;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_handleScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(chatControllerProvider).loadConversations();
     });
@@ -35,8 +38,20 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _handleScroll() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+
+    final position = _scrollController.position;
+    if (position.extentAfter < 240) {
+      ref.read(chatControllerProvider).loadMoreSelectedConversationMessages();
+    }
   }
 
   void _scrollToBottom() {
@@ -58,11 +73,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final theme = Theme.of(context);
 
     final isNote = conversation.type == ConversationType.note;
-    final isChannel = conversation.type == ConversationType.channel;
-    final isDark = theme.brightness == Brightness.dark;
 
-    // Scroll après mise à jour des messages
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    final shouldScrollToBottom =
+        conversation.id != _lastConversationId ||
+        messages.length > _lastMessageCount;
+    _lastConversationId = conversation.id;
+    _lastMessageCount = messages.length;
+    if (shouldScrollToBottom && !isNote) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    }
 
     return Scaffold(
       key: _scaffoldKey,
@@ -118,34 +137,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           key: ValueKey(conversation.id),
                           conversation: conversation,
                         )
-                      : messages.isEmpty
-                      ? _EmptyState(theme: theme)
-                      : ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
-                          itemCount:
-                              messages.length +
-                              (conversation.heroAssetLabel != null ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            if (index < messages.length) {
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 16),
-                                child: MessageBubble(
-                                  message: messages[index],
-                                  conversation: conversation,
-                                ),
-                              );
-                            }
-                            // Hero card
-                            return Column(
-                              children: [
-                                _HeroCard(theme: theme),
-                                const SizedBox(height: 12),
-                                const _InlineActionRow(),
-                                const SizedBox(height: 24),
-                              ],
-                            );
-                          },
+                      : _ConversationBody(
+                          chat: chat,
+                          conversation: conversation,
+                          theme: theme,
+                          scrollController: _scrollController,
                         ),
                 ),
                 // ── Composer ─────────────────────────────────────────────────────
@@ -187,22 +183,159 @@ class _EmptyState extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: AppThemeColors.card,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: AppThemeColors.stroke),
+              ),
+              child: Icon(
+                CupertinoIcons.chat_bubble_2,
+                color: AppThemeColors.textMuted,
+              ),
+            ),
+            const SizedBox(height: 18),
             Text(
-              'Comment puis-je\nvous aider ?',
+              'Nouvelle conversation',
+              textAlign: TextAlign.center,
               style: theme.textTheme.headlineLarge?.copyWith(
-                fontSize: 30,
-                height: 1.25,
+                fontSize: 28,
+                height: 1.2,
               ),
             ),
             const SizedBox(height: 12),
             Text(
-              'Posez une question, rédigez du contenu, analysez des données…',
+              'Aucun historique local. Envoyez un premier message pour démarrer.',
+              textAlign: TextAlign.center,
               style: theme.textTheme.bodyLarge?.copyWith(
                 color: AppThemeColors.textSoft,
                 height: 1.5,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ConversationBody extends StatelessWidget {
+  const _ConversationBody({
+    required this.chat,
+    required this.conversation,
+    required this.theme,
+    required this.scrollController,
+  });
+
+  final ChatController chat;
+  final Conversation conversation;
+  final ThemeData theme;
+  final ScrollController scrollController;
+
+  @override
+  Widget build(BuildContext context) {
+    if (chat.isSelectedConversationLoading &&
+        conversation.messages.isEmpty &&
+        !chat.hasLoadedSelectedConversation) {
+      return const Center(child: CircularProgressIndicator.adaptive());
+    }
+
+    if (chat.selectedConversationErrorMessage != null &&
+        conversation.messages.isEmpty) {
+      return _ConversationErrorState(
+        message: chat.selectedConversationErrorMessage!,
+      );
+    }
+
+    if (conversation.messages.isEmpty) {
+      return _EmptyState(theme: theme);
+    }
+
+    final itemCount =
+        conversation.messages.length +
+        (conversation.heroAssetLabel != null ? 1 : 0) +
+        (chat.isSelectedConversationLoadingMore ? 1 : 0);
+
+    return ListView.builder(
+      controller: scrollController,
+      padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
+      itemCount: itemCount,
+      itemBuilder: (context, index) {
+        if (index < conversation.messages.length) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: MessageBubble(
+              message: conversation.messages[index],
+              conversation: conversation,
+            ),
+          );
+        }
+
+        if (chat.isSelectedConversationLoadingMore &&
+            index == conversation.messages.length) {
+          return const Padding(
+            padding: EdgeInsets.only(bottom: 16),
+            child: Center(child: CircularProgressIndicator.adaptive()),
+          );
+        }
+
+        return Column(
+          children: [
+            _HeroCard(theme: theme),
+            const SizedBox(height: 12),
+            const _InlineActionRow(),
+            const SizedBox(height: 24),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ConversationErrorState extends ConsumerWidget {
+  const _ConversationErrorState({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              CupertinoIcons.exclamationmark_triangle,
+              color: AppThemeColors.textMuted,
+              size: 32,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Impossible de charger la conversation',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: AppThemeColors.textSoft,
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () {
+                ref.read(chatControllerProvider).retrySelectedConversation();
+              },
+              child: const Text('Réessayer'),
             ),
           ],
         ),

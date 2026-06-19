@@ -10,13 +10,10 @@ import '../providers/auth_state_provider.dart';
 ///
 /// Keycloak redirige vers l'app Flutter après auth.
 /// GoRouter parse le code et le state depuis l'URL.
-/// Cette page échange le code contre les tokens Keycloak.
+/// Cette page échange le code OAuth puis déclenche l'échange vers les tokens
+/// natifs LibreChat avant d'entrer dans l'app.
 class OAuthCallbackPage extends ConsumerStatefulWidget {
-  const OAuthCallbackPage({
-    super.key,
-    required this.code,
-    required this.state,
-  });
+  const OAuthCallbackPage({super.key, required this.code, required this.state});
 
   final String code;
   final String state;
@@ -138,7 +135,7 @@ class _OAuthCallbackPageState extends ConsumerState<OAuthCallbackPage> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Vérification des tokens Keycloak',
+              'Échange de la session LibreChat',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: AppThemeColors.textMuted,
               ),

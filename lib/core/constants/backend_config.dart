@@ -6,6 +6,11 @@ class BackendConfig {
     defaultValue: 'http://135.125.102.165:3080',
   );
 
+  static const mobileAuthExchangeKey = String.fromEnvironment(
+    'MOBILE_AUTH_EXCHANGE_KEY',
+    defaultValue: '5e1f6e0030ffa45659e401ce502ed9bd',
+  );
+
   static const userAgent =
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';

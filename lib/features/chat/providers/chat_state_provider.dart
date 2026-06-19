@@ -1,10 +1,10 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/chatia_api_service.dart';
-import '../../../shared/data/mock_data.dart';
 import '../../../shared/models/chat_message.dart';
 import '../../../shared/models/conversation.dart';
 
@@ -15,21 +15,38 @@ final chatControllerProvider = ChangeNotifierProvider<ChatController>((ref) {
 
 class ChatController extends ChangeNotifier {
   ChatController(this._apiService) {
-    _conversations = MockData.conversations;
-    _selectedConversation = _conversations.first;
+    _conversations = const [];
+    _selectedConversation = _createDraftConversation();
   }
 
   final ChatiaApiService _apiService;
+  static const _draftConversationId = '__draft__';
 
   late List<Conversation> _conversations;
   late Conversation _selectedConversation;
+  final Set<String> _loadedConversationIds = <String>{};
+  final Set<String> _loadingConversationIds = <String>{};
+  final Set<String> _loadingMoreConversationIds = <String>{};
+  final Map<String, String?> _conversationNextCursors = <String, String?>{};
+  final Map<String, String> _conversationErrors = <String, String>{};
   bool isLoading = false;
   bool isStreaming = false;
+  StreamSubscription<ChatStreamEvent>? _activeStreamSubscription;
   String searchQuery = '';
   String? errorMessage;
 
   List<Conversation> get conversations => List.unmodifiable(_conversations);
   Conversation get selectedConversation => _selectedConversation;
+  bool get isSelectedConversationLoading =>
+      _loadingConversationIds.contains(_selectedConversation.id);
+  bool get isSelectedConversationLoadingMore =>
+      _loadingMoreConversationIds.contains(_selectedConversation.id);
+  bool get hasLoadedSelectedConversation =>
+      _loadedConversationIds.contains(_selectedConversation.id);
+  bool get selectedConversationHasMoreMessages =>
+      (_conversationNextCursors[_selectedConversation.id]?.isNotEmpty ?? false);
+  String? get selectedConversationErrorMessage =>
+      _conversationErrors[_selectedConversation.id];
 
   List<Conversation> get pinnedConversations => _conversations
       .where(
@@ -68,6 +85,11 @@ class ChatController extends ChangeNotifier {
       if (results.isNotEmpty) {
         _conversations = results;
         _selectedConversation = results.first;
+        notifyListeners();
+        await selectConversation(results.first, forceReload: true);
+      } else {
+        _conversations = const [];
+        _selectedConversation = _createDraftConversation();
       }
     } catch (error) {
       errorMessage = error.toString();
@@ -77,29 +99,58 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  Future<void> selectConversation(Conversation conversation) async {
+  Future<void> selectConversation(
+    Conversation conversation, {
+    bool forceReload = false,
+  }) async {
     _selectedConversation = conversation;
     notifyListeners();
 
     if (!_apiService.isAvailable ||
-        conversation.type != ConversationType.chat) {
+        conversation.type != ConversationType.chat ||
+        conversation.id == _draftConversationId) {
       return;
     }
 
-    try {
-      final messages = await _apiService.fetchMessages(conversation.id);
-      final updated = conversation.copyWith(messages: messages);
-      _conversations = _conversations.map((c) {
-        if (c.id == conversation.id) return updated;
-        return c;
-      }).toList();
-      _selectedConversation = updated;
-      errorMessage = null;
-    } catch (error) {
-      errorMessage = error.toString();
+    if (_loadingConversationIds.contains(conversation.id)) {
+      return;
     }
 
-    notifyListeners();
+    if (!forceReload &&
+        _loadedConversationIds.contains(conversation.id) &&
+        !_conversationErrors.containsKey(conversation.id)) {
+      return;
+    }
+
+    await _loadConversationMessages(conversation.id, reset: true);
+  }
+
+  Future<void> retrySelectedConversation() async {
+    if (_selectedConversation.type != ConversationType.chat ||
+        _selectedConversation.id == _draftConversationId) {
+      return;
+    }
+
+    await _loadConversationMessages(_selectedConversation.id, reset: true);
+  }
+
+  Future<void> loadMoreSelectedConversationMessages() async {
+    final conversationId = _selectedConversation.id;
+    final cursor = _conversationNextCursors[conversationId];
+    if (_selectedConversation.type != ConversationType.chat ||
+        conversationId == _draftConversationId ||
+        cursor == null ||
+        cursor.isEmpty ||
+        _loadingConversationIds.contains(conversationId) ||
+        _loadingMoreConversationIds.contains(conversationId)) {
+      return;
+    }
+
+    await _loadConversationMessages(
+      conversationId,
+      reset: false,
+      cursor: cursor,
+    );
   }
 
   void updateSearch(String value) {
@@ -179,6 +230,11 @@ class ChatController extends ChangeNotifier {
     _conversations = _conversations
         .where((c) => c.id != conversation.id)
         .toList();
+    _loadedConversationIds.remove(conversation.id);
+    _loadingConversationIds.remove(conversation.id);
+    _loadingMoreConversationIds.remove(conversation.id);
+    _conversationNextCursors.remove(conversation.id);
+    _conversationErrors.remove(conversation.id);
     if (_selectedConversation.id == conversation.id) {
       if (_conversations.isNotEmpty) {
         final nextIndex = index >= _conversations.length
@@ -251,17 +307,19 @@ class ChatController extends ChangeNotifier {
   }
 
   void createConversation() {
-    final conversation = Conversation(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+    _selectedConversation = _createDraftConversation();
+    notifyListeners();
+  }
+
+  Conversation _createDraftConversation() {
+    return Conversation(
+      id: _draftConversationId,
       title: 'Nouvelle conversation',
       subtitle: 'Commence un échange',
       folder: 'Brouillons',
       isPinned: false,
       messages: const [],
     );
-    _conversations = [conversation, ..._conversations];
-    _selectedConversation = conversation;
-    notifyListeners();
   }
 
   void createNote() {
@@ -320,45 +378,25 @@ class ChatController extends ChangeNotifier {
     errorMessage = null;
     notifyListeners();
 
-    try {
-      final stream = _apiService.sendOpenAIChat(
+    await _consumeChatStream(
+      assistantId: assistantId,
+      stream: _apiService.sendOpenAIChat(
         conversationId: conversationId,
         parentMessageId: parentMessageId,
         messageId: userMessage.id,
         text: trimmed,
-      );
-
-      var accumulated = '';
-      await for (final event in stream) {
-        if (event.conversationId != null && event.conversationId!.isNotEmpty) {
-          _updateConversationId(
-            _selectedConversation.id,
-            event.conversationId!,
-          );
-        }
-
-        if (event.done) {
-          continue;
-        }
-
-        accumulated += event.content;
-        _updateAssistantMessage(assistantId, accumulated);
-      }
-    } catch (error) {
-      _updateAssistantMessage(
-        assistantId,
-        'Erreur d\'envoi : ${error.toString()}',
-      );
-    } finally {
-      isStreaming = false;
-      notifyListeners();
-    }
+      ),
+      errorPrefix: 'Erreur d\'envoi',
+    );
   }
 
   /// Envoie un message via un agent LibreChat spécifique
   /// [POST /api/agents/chat + GET /api/agents/chat/stream/:streamId]
   /// Nécessite un [agentId] valide configuré sur l'instance LibreChat.
-  Future<void> sendMessageAsAgent(String text, {required String agentId}) async {
+  Future<void> sendMessageAsAgent(
+    String text, {
+    required String agentId,
+  }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty || agentId.isEmpty) return;
 
@@ -381,33 +419,23 @@ class ChatController extends ChangeNotifier {
     errorMessage = null;
     notifyListeners();
 
-    try {
-      final stream = _apiService.sendAgentChat(
+    await _consumeChatStream(
+      assistantId: assistantId,
+      stream: _apiService.sendAgentChat(
         agentId: agentId,
         conversationId: conversationId,
         parentMessageId: parentMessageId,
         messageId: userMessage.id,
         text: trimmed,
-      );
+      ),
+      errorPrefix: 'Erreur agent',
+    );
+  }
 
-      var accumulated = '';
-      await for (final event in stream) {
-        if (event.conversationId != null && event.conversationId!.isNotEmpty) {
-          _updateConversationId(
-            _selectedConversation.id,
-            event.conversationId!,
-          );
-        }
-        if (event.done) continue;
-        accumulated += event.content;
-        _updateAssistantMessage(assistantId, accumulated);
-      }
-    } catch (error) {
-      _updateAssistantMessage(
-        assistantId,
-        'Erreur agent : ${error.toString()}',
-      );
-    } finally {
+  Future<void> cancelStreaming() async {
+    await _activeStreamSubscription?.cancel();
+    _activeStreamSubscription = null;
+    if (isStreaming) {
       isStreaming = false;
       notifyListeners();
     }
@@ -609,14 +637,86 @@ class ChatController extends ChangeNotifier {
       ],
     );
 
-    _conversations = _conversations.map((conversation) {
-      if (conversation.id == updated.id) {
-        return updated;
-      }
-      return conversation;
-    }).toList();
+    final index = _conversations.indexWhere(
+      (conversation) => conversation.id == updated.id,
+    );
+    if (index == -1) {
+      _conversations = [updated, ..._conversations];
+    } else {
+      _conversations = _conversations.map((conversation) {
+        if (conversation.id == updated.id) {
+          return updated;
+        }
+        return conversation;
+      }).toList();
+    }
     _selectedConversation = updated;
     notifyListeners();
+  }
+
+  Future<void> _consumeChatStream({
+    required String assistantId,
+    required Stream<ChatStreamEvent> stream,
+    required String errorPrefix,
+  }) async {
+    final completer = Completer<void>();
+    var accumulated = '';
+
+    try {
+      await _activeStreamSubscription?.cancel();
+      _activeStreamSubscription = stream.listen(
+        (event) {
+          if (event.conversationId != null &&
+              event.conversationId!.isNotEmpty) {
+            _updateConversationId(
+              _selectedConversation.id,
+              event.conversationId!,
+            );
+          }
+
+          if (event.title != null && event.title!.trim().isNotEmpty) {
+            renameConversation(_selectedConversation, event.title!.trim());
+          }
+
+          if (event.error != null && event.error!.isNotEmpty) {
+            errorMessage = event.error;
+            _updateAssistantMessage(
+              assistantId,
+              '$errorPrefix : ${event.error}',
+            );
+            return;
+          }
+
+          if (event.content.isNotEmpty) {
+            if (event.done) {
+              accumulated = event.content;
+            } else {
+              accumulated += event.content;
+            }
+            _updateAssistantMessage(assistantId, accumulated);
+          }
+        },
+        onError: (error, _) {
+          _updateAssistantMessage(assistantId, '$errorPrefix : $error');
+          if (!completer.isCompleted) {
+            completer.complete();
+          }
+        },
+        onDone: () {
+          if (!completer.isCompleted) {
+            completer.complete();
+          }
+        },
+        cancelOnError: true,
+      );
+
+      await completer.future;
+    } finally {
+      await _activeStreamSubscription?.cancel();
+      _activeStreamSubscription = null;
+      isStreaming = false;
+      notifyListeners();
+    }
   }
 
   void _updateAssistantMessage(String messageId, String text) {
@@ -644,12 +744,19 @@ class ChatController extends ChangeNotifier {
       subtitle: subtitle ?? _selectedConversation.subtitle,
     );
 
-    _conversations = _conversations.map((conversation) {
-      if (conversation.id == _selectedConversation.id) {
-        return updatedConversation;
-      }
-      return conversation;
-    }).toList();
+    final index = _conversations.indexWhere(
+      (conversation) => conversation.id == _selectedConversation.id,
+    );
+    if (index == -1) {
+      _conversations = [updatedConversation, ..._conversations];
+    } else {
+      _conversations = _conversations.map((conversation) {
+        if (conversation.id == _selectedConversation.id) {
+          return updatedConversation;
+        }
+        return conversation;
+      }).toList();
+    }
     _selectedConversation = updatedConversation;
     notifyListeners();
   }
@@ -657,6 +764,25 @@ class ChatController extends ChangeNotifier {
   void _updateConversationId(String oldId, String newId) {
     if (oldId == newId) {
       return;
+    }
+
+    final wasLoaded = _loadedConversationIds.remove(oldId);
+    if (wasLoaded) {
+      _loadedConversationIds.add(newId);
+    }
+    final wasLoading = _loadingConversationIds.remove(oldId);
+    if (wasLoading) {
+      _loadingConversationIds.add(newId);
+    }
+    final wasLoadingMore = _loadingMoreConversationIds.remove(oldId);
+    if (wasLoadingMore) {
+      _loadingMoreConversationIds.add(newId);
+    }
+    if (_conversationNextCursors.containsKey(oldId)) {
+      _conversationNextCursors[newId] = _conversationNextCursors.remove(oldId);
+    }
+    if (_conversationErrors.containsKey(oldId)) {
+      _conversationErrors[newId] = _conversationErrors.remove(oldId)!;
     }
 
     _conversations = _conversations.map((conversation) {
@@ -705,5 +831,83 @@ class ChatController extends ChangeNotifier {
         .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
         .join();
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
+  Future<void> _loadConversationMessages(
+    String conversationId, {
+    required bool reset,
+    String? cursor,
+  }) async {
+    if (reset) {
+      _loadingConversationIds.add(conversationId);
+      _conversationErrors.remove(conversationId);
+    } else {
+      _loadingMoreConversationIds.add(conversationId);
+    }
+    errorMessage = null;
+    notifyListeners();
+
+    try {
+      final details = reset
+          ? await _apiService.fetchConversation(conversationId)
+          : _conversationById(conversationId);
+      final page = await _apiService.fetchMessages(
+        conversationId,
+        cursor: cursor,
+      );
+      final previous = _conversationById(conversationId);
+      final mergedMessages = reset
+          ? page.messages
+          : <ChatMessage>[
+              ...previous.messages,
+              ...page.messages.where(
+                (message) => !previous.messages.any((m) => m.id == message.id),
+              ),
+            ];
+      final updated = details.copyWith(messages: mergedMessages);
+
+      _replaceConversation(updated);
+      _conversationNextCursors[conversationId] = page.nextCursor;
+      _loadedConversationIds.add(conversationId);
+      _conversationErrors.remove(conversationId);
+      if (_selectedConversation.id == conversationId) {
+        _selectedConversation = updated;
+      }
+    } catch (error) {
+      final message = error.toString();
+      _conversationErrors[conversationId] = message;
+      errorMessage = message;
+      if (reset) {
+        _loadedConversationIds.remove(conversationId);
+      }
+    } finally {
+      _loadingConversationIds.remove(conversationId);
+      _loadingMoreConversationIds.remove(conversationId);
+      notifyListeners();
+    }
+  }
+
+  Conversation _conversationById(String conversationId) {
+    return _conversations.firstWhere(
+      (conversation) => conversation.id == conversationId,
+      orElse: () => _selectedConversation,
+    );
+  }
+
+  void _replaceConversation(Conversation updated) {
+    final index = _conversations.indexWhere(
+      (conversation) => conversation.id == updated.id,
+    );
+    if (index == -1) {
+      _conversations = [updated, ..._conversations];
+      return;
+    }
+
+    _conversations = _conversations.map((conversation) {
+      if (conversation.id == updated.id) {
+        return updated;
+      }
+      return conversation;
+    }).toList();
   }
 }

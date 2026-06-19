@@ -7,18 +7,15 @@ import 'package:http/http.dart' as http;
 
 import '../constants/backend_config.dart';
 import 'jwt_debug_helper.dart';
-import '../../features/auth/providers/auth_state_provider.dart';
+import 'librechat_session_service.dart';
 import '../../shared/models/chat_message.dart';
 import '../../shared/models/conversation.dart';
 
 final libreChatApiProvider = Provider<LibreChatApiService>((ref) {
-  final session = ref.watch(
-    authControllerProvider.select((auth) => auth.session),
-  );
+  final sessionService = ref.watch(libreChatSessionServiceProvider);
   return LibreChatApiService(
     baseUrl: BackendConfig.baseUrl,
-    accessToken: session?.accessToken,
-    idToken: session?.idToken,
+    sessionService: sessionService,
   );
 });
 
@@ -27,40 +24,28 @@ final libreChatConfigProvider = FutureProvider<Map<String, dynamic>>((ref) {
 });
 
 class LibreChatApiService {
-  LibreChatApiService({required this.baseUrl, this.accessToken, this.idToken});
+  LibreChatApiService({required this.baseUrl, required this.sessionService});
 
   static const defaultOpenAiModel = 'gpt-4';
 
   final String baseUrl;
-  final String? accessToken;
-  final String? idToken;
+  final LibreChatSessionService sessionService;
 
-  String? get _bearerToken {
-    if (idToken != null && idToken!.isNotEmpty) {
-      return idToken;
-    }
-    if (accessToken != null && accessToken!.isNotEmpty) {
-      return accessToken;
-    }
-    return null;
-  }
+  bool get isAvailable => sessionService.currentSession != null;
 
-  bool get isAvailable => _bearerToken != null;
-
-  Map<String, String> get _baseHeaders {
+  Map<String, String> _baseHeaders([String? accessToken]) {
     final headers = <String, String>{'Accept': 'application/json'};
     if (!kIsWeb) {
       headers['User-Agent'] = BackendConfig.userAgent;
     }
-    final bearerToken = _bearerToken;
-    if (bearerToken != null) {
-      headers['Authorization'] = 'Bearer $bearerToken';
+    if (accessToken != null && accessToken.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $accessToken';
     }
     return headers;
   }
 
-  Map<String, String> get _jsonHeaders => {
-    ..._baseHeaders,
+  Map<String, String> _jsonHeaders([String? accessToken]) => {
+    ..._baseHeaders(accessToken),
     'Content-Type': 'application/json',
   };
 
@@ -69,11 +54,10 @@ class LibreChatApiService {
       return;
     }
 
-    final access = JwtDebugHelper.inspect(accessToken);
-    final id = JwtDebugHelper.inspect(idToken);
-    final selected = identical(_bearerToken, idToken) && idToken != null
-        ? 'idToken'
-        : identical(_bearerToken, accessToken) && accessToken != null
+    final session = sessionService.currentSession;
+    final access = JwtDebugHelper.inspect(session?.accessToken);
+    final id = JwtDebugHelper.inspect(session?.idToken);
+    final selected = session?.accessToken.isNotEmpty == true
         ? 'accessToken'
         : 'none';
     debugPrint('[LibreChat][$context] selectedBearer=$selected');
@@ -93,15 +77,55 @@ class LibreChatApiService {
     debugPrint('[LibreChat][$method] url=$uri');
   }
 
+  void _logFullDebug(String context, String value) {
+    if (!kDebugMode) {
+      return;
+    }
+
+    const chunkSize = 800;
+    debugPrint('[LibreChat][$context] length=${value.length}');
+    for (var index = 0; index < value.length; index += chunkSize) {
+      final end = (index + chunkSize < value.length)
+          ? index + chunkSize
+          : value.length;
+      debugPrint(
+        '[LibreChat][$context] chunk ${index ~/ chunkSize + 1}: ${value.substring(index, end)}',
+      );
+    }
+  }
+
   Uri _uri(String path, [Map<String, String>? queryParameters]) {
     return Uri.parse('$baseUrl$path').replace(queryParameters: queryParameters);
   }
 
+  Future<http.Response> _sendJson(
+    String method,
+    String path, {
+    Map<String, String>? queryParameters,
+    String? body,
+    Duration? timeout,
+  }) async {
+    final operation = sessionService.sendAuthorized((accessToken) {
+      final request = http.Request(method, _uri(path, queryParameters));
+      request.headers.addAll(_jsonHeaders(accessToken));
+      if (body != null) {
+        request.body = body;
+      }
+      return request;
+    });
+
+    final streamed = timeout != null
+        ? await operation.timeout(timeout)
+        : await operation;
+    return http.Response.fromStream(streamed);
+  }
+
   Future<Map<String, dynamic>> fetchConfig() async {
-    final uri = _uri('/api/config');
-    final response = await http
-        .get(uri, headers: _jsonHeaders)
-        .timeout(const Duration(seconds: 10));
+    final response = await _sendJson(
+      'GET',
+      '/api/config',
+      timeout: const Duration(seconds: 10),
+    );
     if (response.statusCode != 200) {
       throw Exception(
         'Impossible de charger la configuration : ${response.statusCode}',
@@ -112,10 +136,7 @@ class LibreChatApiService {
   }
 
   Future<void> logout() async {
-    final response = await http.post(
-      _uri('/api/auth/logout'),
-      headers: _jsonHeaders,
-    );
+    final response = await _sendJson('POST', '/api/auth/logout');
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         'Impossible de fermer la session LibreChat : ${response.statusCode}',
@@ -124,31 +145,31 @@ class LibreChatApiService {
   }
 
   Future<Map<String, dynamic>> refreshAuth() async {
-    final response = await http.post(
-      _uri('/api/auth/refresh'),
-      headers: _jsonHeaders,
-    );
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Impossible de rafraichir la session LibreChat : ${response.statusCode}',
-      );
-    }
-
-    return jsonDecode(response.body) as Map<String, dynamic>;
+    final session = await sessionService.refreshAccessToken(force: true);
+    return <String, dynamic>{
+      'token': session.accessToken,
+      'user': {'email': session.email, 'username': session.userName},
+    };
   }
 
   Future<List<Conversation>> fetchConversations({
     String sortBy = 'updatedAt',
     String sortDirection = 'desc',
-    int pageSize = 10,
+    int limit = 25,
+    String? cursor,
+    String? search,
   }) async {
-    final uri = _uri('/api/convos', {
-      'sortBy': sortBy,
-      'sortDirection': sortDirection,
-      'pageSize': '$pageSize',
-    });
-
-    final response = await http.get(uri, headers: _jsonHeaders);
+    final response = await _sendJson(
+      'GET',
+      '/api/convos',
+      queryParameters: {
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+        if (search != null && search.isNotEmpty) 'search': search,
+        'limit': '$limit',
+        'sortBy': sortBy,
+        'sortDirection': sortDirection,
+      },
+    );
     if (response.statusCode != 200) {
       throw Exception(
         'Impossible de charger les conversations : ${response.statusCode}',
@@ -163,9 +184,24 @@ class LibreChatApiService {
     return items.cast<Map<String, dynamic>>().map(_mapApiConversation).toList();
   }
 
+  Future<Conversation> fetchConversation(String conversationId) async {
+    final response = await _sendJson('GET', '/api/convos/$conversationId');
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Impossible de charger la conversation : ${response.statusCode}',
+      );
+    }
+
+    final jsonBody = jsonDecode(response.body);
+    if (jsonBody is! Map<String, dynamic>) {
+      throw Exception('Réponse conversation inattendue.');
+    }
+
+    return _mapApiConversation(jsonBody);
+  }
+
   Future<List<String>> fetchModels() async {
-    final uri = _uri('/api/models');
-    final response = await http.get(uri, headers: _jsonHeaders);
+    final response = await _sendJson('GET', '/api/models');
     if (response.statusCode != 200) {
       throw Exception(
         'Impossible de charger les modèles : ${response.statusCode}',
@@ -194,9 +230,22 @@ class LibreChatApiService {
         .toList();
   }
 
-  Future<List<ChatMessage>> fetchMessages(String conversationId) async {
-    final uri = _uri('/api/messages/$conversationId');
-    final response = await http.get(uri, headers: _jsonHeaders);
+  Future<PaginatedMessagesResponse> fetchMessages(
+    String conversationId, {
+    int pageSize = 25,
+    String? cursor,
+  }) async {
+    final response = await _sendJson(
+      'GET',
+      '/api/messages',
+      queryParameters: {
+        'conversationId': conversationId,
+        'pageSize': '$pageSize',
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+        'sortBy': 'createdAt',
+        'sortDirection': 'asc',
+      },
+    );
     if (response.statusCode != 200) {
       throw Exception(
         'Impossible de charger les messages : ${response.statusCode}',
@@ -204,12 +253,18 @@ class LibreChatApiService {
     }
 
     final jsonBody = jsonDecode(response.body);
-    // L'API peut retourner un tableau direct ou {messages: [...]}
+    // Route recommandée : {messages: [...]} ; fallback sur tableau direct.
     final items = jsonBody is Map<String, dynamic>
         ? (jsonBody['messages'] as List<dynamic>?) ?? []
         : (jsonBody as List<dynamic>);
+    final nextCursor = jsonBody is Map<String, dynamic>
+        ? jsonBody['nextCursor']?.toString()
+        : null;
 
-    return items.cast<Map<String, dynamic>>().map(_mapApiMessage).toList();
+    return PaginatedMessagesResponse(
+      messages: items.cast<Map<String, dynamic>>().map(_mapApiMessage).toList(),
+      nextCursor: nextCursor,
+    );
   }
 
   /// GET /api/messages/:conversationId/:messageId
@@ -218,8 +273,10 @@ class LibreChatApiService {
     String conversationId,
     String messageId,
   ) async {
-    final uri = _uri('/api/messages/$conversationId/$messageId');
-    final response = await http.get(uri, headers: _jsonHeaders);
+    final response = await _sendJson(
+      'GET',
+      '/api/messages/$conversationId/$messageId',
+    );
     if (response.statusCode != 200) {
       throw Exception(
         'Message introuvable ($conversationId/$messageId) : ${response.statusCode}',
@@ -245,7 +302,6 @@ class LibreChatApiService {
     bool isCreatedByUser = true,
     bool error = false,
   }) async {
-    final uri = _uri('/api/messages/$conversationId');
     final body = jsonEncode({
       'messageId': messageId,
       'parentMessageId': parentMessageId,
@@ -255,7 +311,11 @@ class LibreChatApiService {
       'error': error,
     });
 
-    final response = await http.post(uri, headers: _jsonHeaders, body: body);
+    final response = await _sendJson(
+      'POST',
+      '/api/messages/$conversationId',
+      body: body,
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         'Impossible de sauvegarder le message : ${response.statusCode} ${response.body}',
@@ -280,10 +340,13 @@ class LibreChatApiService {
     String messageId, {
     required String text,
   }) async {
-    final uri = _uri('/api/messages/$conversationId/$messageId');
     final body = jsonEncode({'text': text});
 
-    final response = await http.put(uri, headers: _jsonHeaders, body: body);
+    final response = await _sendJson(
+      'PUT',
+      '/api/messages/$conversationId/$messageId',
+      body: body,
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         'Impossible de modifier le message : ${response.statusCode} ${response.body}',
@@ -300,8 +363,10 @@ class LibreChatApiService {
   /// DELETE /api/messages/:conversationId/:messageId
   /// Supprime un message précis d'une conversation.
   Future<void> deleteMessage(String conversationId, String messageId) async {
-    final uri = _uri('/api/messages/$conversationId/$messageId');
-    final response = await http.delete(uri, headers: _jsonHeaders);
+    final response = await _sendJson(
+      'DELETE',
+      '/api/messages/$conversationId/$messageId',
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         'Impossible de supprimer le message : ${response.statusCode} ${response.body}',
@@ -317,8 +382,10 @@ class LibreChatApiService {
     String model = defaultOpenAiModel,
   }) async {
     _logAuthDebug('POST /api/agents/chat/openAI');
-    final uri = _uri('/api/agents/chat/openAI');
-    _logRequestDebug('POST /api/agents/chat/openAI', uri);
+    _logRequestDebug(
+      'POST /api/agents/chat/openAI',
+      _uri('/api/agents/chat/openAI'),
+    );
     final body = jsonEncode({
       'endpoint': 'openAI',
       'model': model,
@@ -328,7 +395,11 @@ class LibreChatApiService {
       'text': text,
     });
 
-    final response = await http.post(uri, headers: _jsonHeaders, body: body);
+    final response = await _sendJson(
+      'POST',
+      '/api/agents/chat/openAI',
+      body: body,
+    );
     if (response.statusCode != 200) {
       throw Exception(
         'Échec démarrage OpenAI: ${response.statusCode} ${response.body}',
@@ -352,7 +423,8 @@ class LibreChatApiService {
     required String text,
     String? conversationId,
   }) async {
-    final uri = _uri('/api/agents/chat');
+    _logAuthDebug('POST /api/agents/chat');
+    _logRequestDebug('POST /api/agents/chat', _uri('/api/agents/chat'));
     final body = jsonEncode({
       'agent_id': agentId,
       'conversationId': conversationId,
@@ -360,8 +432,9 @@ class LibreChatApiService {
       'messageId': messageId,
       'text': text,
     });
+    _logFullDebug('POST /api/agents/chat body', body);
 
-    final response = await http.post(uri, headers: _jsonHeaders, body: body);
+    final response = await _sendJson('POST', '/api/agents/chat', body: body);
     if (response.statusCode != 200) {
       throw Exception(
         'Échec démarrage chat agent ($agentId): ${response.statusCode} ${response.body}',
@@ -489,14 +562,15 @@ class LibreChatApiService {
       throw Exception('Fichier vide ou non lisible.');
     }
 
-    final request = http.MultipartRequest('POST', _uri(path));
-    request.headers.addAll(_baseHeaders);
-    request.fields.addAll(fields);
-    request.files.add(
-      http.MultipartFile.fromBytes(fileField, bytes, filename: filename),
-    );
-
-    final streamedResponse = await request.send();
+    final streamedResponse = await sessionService.sendAuthorized((accessToken) {
+      final request = http.MultipartRequest('POST', _uri(path));
+      request.headers.addAll(_baseHeaders(accessToken));
+      request.fields.addAll(fields);
+      request.files.add(
+        http.MultipartFile.fromBytes(fileField, bytes, filename: filename),
+      );
+      return request;
+    });
     final response = await http.Response.fromStream(streamedResponse);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -552,11 +626,12 @@ class LibreChatApiService {
     _logAuthDebug('GET /api/agents/chat/stream/$streamId');
     final uri = _uri('/api/agents/chat/stream/$streamId');
     _logRequestDebug('GET /api/agents/chat/stream/$streamId', uri);
-    final request = http.Request('GET', uri);
-    request.headers.addAll(_baseHeaders);
-    request.headers['Accept'] = 'text/event-stream';
-
-    final response = await request.send();
+    final response = await sessionService.sendAuthorized((accessToken) {
+      final request = http.Request('GET', uri);
+      request.headers.addAll(_baseHeaders(accessToken));
+      request.headers['Accept'] = 'text/event-stream';
+      return request;
+    });
     if (response.statusCode != 200) {
       throw Exception(
         'Échec de connexion au flux SSE : ${response.statusCode}',
@@ -567,13 +642,15 @@ class LibreChatApiService {
         .transform(utf8.decoder)
         .transform(const LineSplitter());
     final buffer = StringBuffer();
+    String? currentEvent;
 
     await for (final rawLine in decoded) {
       final line = rawLine.trimRight();
       if (line.isEmpty) {
         if (buffer.isNotEmpty) {
-          final chunk = _extractSseText(buffer.toString());
+          final chunk = _extractSseText(buffer.toString(), event: currentEvent);
           buffer.clear();
+          currentEvent = null;
           if (chunk.isNotEmpty) {
             yield chunk;
           }
@@ -581,7 +658,9 @@ class LibreChatApiService {
         continue;
       }
 
-      if (line.startsWith('data:')) {
+      if (line.startsWith('event:')) {
+        currentEvent = line.substring(6).trim();
+      } else if (line.startsWith('data:')) {
         buffer.write(line.substring(5).trim());
       } else if (line.startsWith('data')) {
         buffer.write(line.substring(4).trim());
@@ -589,14 +668,14 @@ class LibreChatApiService {
     }
 
     if (buffer.isNotEmpty) {
-      final chunk = _extractSseText(buffer.toString());
+      final chunk = _extractSseText(buffer.toString(), event: currentEvent);
       if (chunk.isNotEmpty) {
         yield chunk;
       }
     }
   }
 
-  String _extractSseText(String raw) {
+  String _extractSseText(String raw, {String? event}) {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) return '';
     if (trimmed == '[DONE]' || trimmed.toLowerCase() == 'done') {
@@ -606,6 +685,29 @@ class LibreChatApiService {
     try {
       final jsonBody = jsonDecode(trimmed);
       if (jsonBody is Map<String, dynamic>) {
+        if (event == 'error') {
+          final message =
+              jsonBody['error']?.toString() ??
+              jsonBody['message']?.toString() ??
+              'Erreur SSE inconnue';
+          throw Exception(message);
+        }
+        if (jsonBody['final'] == true) {
+          final responseMessage = jsonBody['responseMessage'];
+          if (responseMessage is Map<String, dynamic>) {
+            return responseMessage['text']?.toString() ??
+                responseMessage['content']?.toString() ??
+                '';
+          }
+        }
+        if (jsonBody.containsKey('conversation')) {
+          final responseMessage = jsonBody['responseMessage'];
+          if (responseMessage is Map<String, dynamic>) {
+            return responseMessage['text']?.toString() ??
+                responseMessage['content']?.toString() ??
+                '';
+          }
+        }
         if (jsonBody.containsKey('delta')) {
           return jsonBody['delta']?.toString() ?? '';
         }
@@ -713,6 +815,16 @@ class OpenAIChatResponse {
 
   final String streamId;
   final String? conversationId;
+}
+
+class PaginatedMessagesResponse {
+  const PaginatedMessagesResponse({
+    required this.messages,
+    required this.nextCursor,
+  });
+
+  final List<ChatMessage> messages;
+  final String? nextCursor;
 }
 
 class ChatStreamEvent {

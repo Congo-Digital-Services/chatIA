@@ -131,12 +131,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 }
+
 // ── Carte principale d'auth ─────────────────────────────────────────────────
 class _AuthCard extends ConsumerWidget {
-  const _AuthCard({
-    required this.auth,
-    required this.isDark,
-  });
+  const _AuthCard({required this.auth, required this.isDark});
 
   final AuthController auth;
   final bool isDark;

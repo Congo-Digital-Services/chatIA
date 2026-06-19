@@ -1,3 +1,5 @@
+enum AuthSessionProvider { mock, openid, librechat }
+
 class AuthSession {
   const AuthSession({
     required this.accessToken,
@@ -7,6 +9,7 @@ class AuthSession {
     required this.email,
     required this.expiresAt,
     required this.isMock,
+    required this.provider,
   });
 
   final String accessToken;
@@ -16,11 +19,42 @@ class AuthSession {
   final String email;
   final DateTime expiresAt;
   final bool isMock;
+  final AuthSessionProvider provider;
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);
+  bool get supportsAutomaticRefresh =>
+      provider == AuthSessionProvider.librechat &&
+      refreshToken != null &&
+      refreshToken!.isNotEmpty;
 
   bool willExpireWithin(Duration threshold) {
     return DateTime.now().add(threshold).isAfter(expiresAt);
+  }
+
+  AuthSession copyWith({
+    String? accessToken,
+    String? refreshToken,
+    bool clearRefreshToken = false,
+    String? idToken,
+    bool clearIdToken = false,
+    String? userName,
+    String? email,
+    DateTime? expiresAt,
+    bool? isMock,
+    AuthSessionProvider? provider,
+  }) {
+    return AuthSession(
+      accessToken: accessToken ?? this.accessToken,
+      refreshToken: clearRefreshToken
+          ? null
+          : (refreshToken ?? this.refreshToken),
+      idToken: clearIdToken ? null : (idToken ?? this.idToken),
+      userName: userName ?? this.userName,
+      email: email ?? this.email,
+      expiresAt: expiresAt ?? this.expiresAt,
+      isMock: isMock ?? this.isMock,
+      provider: provider ?? this.provider,
+    );
   }
 
   factory AuthSession.mock() {
@@ -32,6 +66,7 @@ class AuthSession {
       email: 'utilisateur@conduit.dev',
       expiresAt: DateTime.now().add(const Duration(hours: 8)),
       isMock: true,
+      provider: AuthSessionProvider.mock,
     );
   }
 
@@ -44,10 +79,12 @@ class AuthSession {
       'email': email,
       'expiresAt': expiresAt.toIso8601String(),
       'isMock': isMock,
+      'provider': provider.name,
     };
   }
 
   factory AuthSession.fromJson(Map<String, dynamic> json) {
+    final providerName = json['provider'] as String?;
     return AuthSession(
       accessToken: json['accessToken'] as String,
       refreshToken: json['refreshToken'] as String?,
@@ -56,6 +93,12 @@ class AuthSession {
       email: json['email'] as String,
       expiresAt: DateTime.parse(json['expiresAt'] as String),
       isMock: json['isMock'] as bool? ?? false,
+      provider: AuthSessionProvider.values.firstWhere(
+        (value) => value.name == providerName,
+        orElse: () => (json['isMock'] as bool? ?? false)
+            ? AuthSessionProvider.mock
+            : AuthSessionProvider.openid,
+      ),
     );
   }
 }

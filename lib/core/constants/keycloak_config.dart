@@ -7,7 +7,8 @@ import 'package:flutter/foundation.dart';
 /// Client: chatAi
 ///
 /// L'app Flutter fait l'OAuth direct avec Keycloak (pas via LibreChat).
-/// Les tokens Keycloak sont ensuite passés à LibreChat en Bearer.
+/// Le bearer OpenID obtenu est ensuite echange via `/api/mobile/auth/exchange`
+/// pour obtenir les tokens natifs LibreChat utilises par l'app.
 ///
 /// IMPORTANT — Le client "chatAi" dans Keycloak doit avoir ces
 ///             Valid Redirect URIs pour que l'app fonctionne :

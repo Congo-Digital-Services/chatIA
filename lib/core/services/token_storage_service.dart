@@ -11,10 +11,10 @@ final tokenStorageServiceProvider = Provider<TokenStorageService>((ref) {
 
 class TokenStorageService {
   TokenStorageService()
-      : _storage = const FlutterSecureStorage(
-          aOptions: AndroidOptions(encryptedSharedPreferences: true),
-          iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
-        );
+    : _storage = const FlutterSecureStorage(
+        aOptions: AndroidOptions(encryptedSharedPreferences: true),
+        iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+      );
 
   static const _sessionKey = 'chatia_auth_session';
   final FlutterSecureStorage _storage;

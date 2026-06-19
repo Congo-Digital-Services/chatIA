@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../constants/keycloak_config.dart';
 import '../../shared/models/auth_session.dart';
 import 'auth_service.dart';
+import 'librechat_session_service.dart';
 import 'oauth_browser_helper.dart';
 import 'pkce_utils.dart';
 import 'token_storage_service.dart';
@@ -18,15 +19,55 @@ import 'token_storage_service.dart';
 ///   2. L'utilisateur s'authentifie sur Keycloak.
 ///   3. Keycloak redirige vers /oauth/openid/callback de ChatIA (cette app).
 ///   4. [handleOAuthCallback] → échange le code contre les tokens Keycloak.
-///   5. La session est sauvegardée et l'app navigue vers /chat.
+///   5. Le bearer OpenID est immédiatement échangé contre un token natif
+///      LibreChat via `/api/mobile/auth/exchange`.
+///   6. La session sauvegardée n'utilise ensuite plus que les tokens natifs
+///      LibreChat pour toutes les requêtes backend.
 class KeycloakAuthService implements AuthService {
-  KeycloakAuthService({required this.storage});
+  KeycloakAuthService({required this.storage, required this.libreChatSession});
 
   final TokenStorageService storage;
+  final LibreChatSessionService libreChatSession;
   final FlutterAppAuth _appAuth = const FlutterAppAuth();
 
   static const _pkceVerifierKey = 'pkce_verifier';
   static const _oauthStateKey = 'oauth_state';
+  static const _useSafariViewControllerOnIos = bool.fromEnvironment(
+    'SSO_USE_SAFARI_VIEW_CONTROLLER',
+    defaultValue: false,
+  );
+
+  void _logReceivedTokens({
+    required String accessToken,
+    String? refreshToken,
+    String? idToken,
+    required String source,
+  }) {
+    if (!kDebugMode) {
+      return;
+    }
+
+    _logFullToken('[SSO][$source] accessToken', accessToken);
+    if (refreshToken != null && refreshToken.isNotEmpty) {
+      _logFullToken('[SSO][$source] refreshToken', refreshToken);
+    }
+    if (idToken != null && idToken.isNotEmpty) {
+      _logFullToken('[SSO][$source] idToken', idToken);
+    }
+  }
+
+  void _logFullToken(String label, String token) {
+    const chunkSize = 700;
+    debugPrint('$label length=${token.length}');
+    for (var index = 0; index < token.length; index += chunkSize) {
+      final end = (index + chunkSize < token.length)
+          ? index + chunkSize
+          : token.length;
+      debugPrint(
+        '$label chunk ${index ~/ chunkSize + 1}: ${token.substring(index, end)}',
+      );
+    }
+  }
 
   // ── Restore session ──────────────────────────────────────────────────────
   @override
@@ -79,6 +120,7 @@ class KeycloakAuthService implements AuthService {
   }
 
   Future<AuthSession> _signInWithMobileAppAuth() async {
+    final externalUserAgent = _resolveExternalUserAgent();
     final request = AuthorizationTokenRequest(
       KeycloakConfig.clientId,
       KeycloakConfig.redirectUri,
@@ -88,51 +130,69 @@ class KeycloakAuthService implements AuthService {
       clientSecret: KeycloakConfig.clientSecret.isNotEmpty
           ? KeycloakConfig.clientSecret
           : null,
+      externalUserAgent: externalUserAgent,
     );
 
     try {
+      _logMobileAuthorizationRequest(request);
       final result = await _appAuth.authorizeAndExchangeCode(request);
       if (result.accessToken == null || result.accessToken!.isEmpty) {
         throw Exception('Aucun token reçu depuis Keycloak.');
       }
 
-      final accessToken = result.accessToken!;
+      final openIdAccessToken = result.accessToken!;
       final refreshToken = result.refreshToken;
       final idToken = result.idToken;
-      final expiresAt =
-          result.accessTokenExpirationDateTime ??
-          DateTime.now().add(const Duration(hours: 1));
-
-      final userInfo = _decodeJwtPayload(idToken ?? accessToken);
-      final userName =
-          (userInfo['preferred_username'] ??
-                  userInfo['name'] ??
-                  userInfo['email'] ??
-                  'Utilisateur')
-              as String;
-      final email = (userInfo['email'] ?? '') as String;
-
-      final session = AuthSession(
-        accessToken: accessToken,
+      _logReceivedTokens(
+        accessToken: openIdAccessToken,
         refreshToken: refreshToken,
         idToken: idToken,
-        userName: userName,
-        email: email,
-        expiresAt: expiresAt,
-        isMock: false,
+        source: 'mobile_appauth',
       );
 
-      await storage.saveSession(session);
+      final session = await libreChatSession.exchangeMobileSession(
+        openIdAccessToken: openIdAccessToken,
+        idToken: idToken,
+      );
       return session;
     } on FlutterAppAuthUserCancelledException catch (error) {
       final details = _formatPlatformErrorDetails(error.platformErrorDetails);
       debugPrint('SSO AppAuth cancelled: $details');
-      throw Exception('Connexion SSO annulée. $details');
+      throw Exception(
+        'Connexion SSO annulée côté iOS. '
+        'Cela arrive si la feuille Safari est fermée ou si le retour '
+        'vers ${KeycloakConfig.redirectUri} ne revient jamais dans l’app. '
+        'Vérifiez surtout la redirect URI Keycloak et le schéma iOS. $details',
+      );
     } on FlutterAppAuthPlatformException catch (error) {
       final details = _formatPlatformErrorDetails(error.platformErrorDetails);
       debugPrint('SSO AppAuth failure: $details');
       throw Exception('Erreur SSO Android/iOS. $details');
     }
+  }
+
+  void _logMobileAuthorizationRequest(AuthorizationTokenRequest request) {
+    if (!kDebugMode) {
+      return;
+    }
+
+    debugPrint(
+      '[SSO][mobile] issuer=${request.issuer} '
+      'discoveryUrl=${request.discoveryUrl} '
+      'clientId=${request.clientId} '
+      'redirectUri=${request.redirectUrl} '
+      'scopes=${request.scopes?.join(' ')} '
+      'externalUserAgent=${request.externalUserAgent?.name}',
+    );
+  }
+
+  ExternalUserAgent _resolveExternalUserAgent() {
+    if (defaultTargetPlatform == TargetPlatform.iOS &&
+        _useSafariViewControllerOnIos) {
+      return ExternalUserAgent.sfSafariViewController;
+    }
+
+    return ExternalUserAgent.asWebAuthenticationSession;
   }
 
   // ── Traitement du callback OAuth2 (échange code → tokens) ────────────────
@@ -187,49 +247,24 @@ class KeycloakAuthService implements AuthService {
 
     final json = jsonDecode(response.body) as Map<String, dynamic>;
 
-    // 4. Décoder le JWT access_token pour extraire les infos utilisateur
+    // 4. Récupérer les tokens Keycloak puis échanger immédiatement le bearer
+    // OpenID contre les tokens natifs LibreChat.
     final accessToken = json['access_token'] as String;
     final refreshToken = json['refresh_token'] as String?;
     final idToken = json['id_token'] as String?;
-    final expiresIn = json['expires_in'] as int? ?? 3600;
 
-    final userInfo = _decodeJwtPayload(accessToken);
-    final userName =
-        (userInfo['preferred_username'] ??
-                userInfo['name'] ??
-                userInfo['email'] ??
-                'Utilisateur')
-            as String;
-    final email = (userInfo['email'] ?? '') as String;
-
-    // 5. Construire et sauvegarder la session
-    final session = AuthSession(
+    _logReceivedTokens(
       accessToken: accessToken,
       refreshToken: refreshToken,
       idToken: idToken,
-      userName: userName,
-      email: email,
-      expiresAt: DateTime.now().add(Duration(seconds: expiresIn)),
-      isMock: false,
+      source: 'web_callback',
     );
 
-    await storage.saveSession(session);
+    final session = await libreChatSession.exchangeMobileSession(
+      openIdAccessToken: accessToken,
+      idToken: idToken,
+    );
     return session;
-  }
-
-  /// Décode la partie payload d'un JWT (base64url, pas de vérification sig).
-  Map<String, dynamic> _decodeJwtPayload(String jwt) {
-    try {
-      final parts = jwt.split('.');
-      if (parts.length < 2) return {};
-      var payload = parts[1];
-      // Padding base64
-      payload += '=' * ((4 - payload.length % 4) % 4);
-      final decoded = utf8.decode(base64Url.decode(payload));
-      return jsonDecode(decoded) as Map<String, dynamic>;
-    } catch (_) {
-      return {};
-    }
   }
 
   String _formatPlatformErrorDetails(
@@ -247,7 +282,9 @@ class KeycloakAuthService implements AuthService {
         'debug=${details.errorDebugDescription}',
     ];
 
-    return parts.isEmpty ? 'Aucun détail fourni par AppAuth.' : parts.join(' | ');
+    return parts.isEmpty
+        ? 'Aucun détail fourni par AppAuth.'
+        : parts.join(' | ');
   }
 
   // ── Déconnexion ──────────────────────────────────────────────────────────

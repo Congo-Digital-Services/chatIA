@@ -6,20 +6,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../constants/backend_config.dart';
-import 'http_client_factory.dart';
 import 'jwt_debug_helper.dart';
-import '../../features/auth/providers/auth_state_provider.dart';
+import 'librechat_session_service.dart';
 import '../../shared/models/chat_message.dart';
 import '../../shared/models/conversation.dart';
 
 final chatiaApiProvider = Provider<ChatiaApiService>((ref) {
-  final session = ref.watch(
-    authControllerProvider.select((auth) => auth.session),
-  );
+  final sessionService = ref.watch(libreChatSessionServiceProvider);
   return ChatiaApiService(
     baseUrl: BackendConfig.baseUrl,
-    accessToken: session?.accessToken,
-    idToken: session?.idToken,
+    sessionService: sessionService,
   );
 });
 
@@ -28,40 +24,28 @@ final chatiaConfigProvider = FutureProvider<Map<String, dynamic>>((ref) {
 });
 
 class ChatiaApiService {
-  ChatiaApiService({required this.baseUrl, this.accessToken, this.idToken});
+  ChatiaApiService({required this.baseUrl, required this.sessionService});
 
   static const defaultOpenAiModel = 'gpt-4';
 
   final String baseUrl;
-  final String? accessToken;
-  final String? idToken;
+  final LibreChatSessionService sessionService;
 
-  String? get _bearerToken {
-    if (idToken != null && idToken!.isNotEmpty) {
-      return idToken;
-    }
-    if (accessToken != null && accessToken!.isNotEmpty) {
-      return accessToken;
-    }
-    return null;
-  }
+  bool get isAvailable => sessionService.currentSession != null;
 
-  bool get isAvailable => _bearerToken != null;
-
-  Map<String, String> get _baseHeaders {
+  Map<String, String> _baseHeaders([String? accessToken]) {
     final headers = <String, String>{'Accept': 'application/json'};
     if (!kIsWeb) {
       headers['User-Agent'] = BackendConfig.userAgent;
     }
-    final bearerToken = _bearerToken;
-    if (bearerToken != null) {
-      headers['Authorization'] = 'Bearer $bearerToken';
+    if (accessToken != null && accessToken.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $accessToken';
     }
     return headers;
   }
 
-  Map<String, String> get _jsonHeaders => {
-    ..._baseHeaders,
+  Map<String, String> _jsonHeaders([String? accessToken]) => {
+    ..._baseHeaders(accessToken),
     'Content-Type': 'application/json',
   };
 
@@ -70,11 +54,10 @@ class ChatiaApiService {
       return;
     }
 
-    final access = JwtDebugHelper.inspect(accessToken);
-    final id = JwtDebugHelper.inspect(idToken);
-    final selected = identical(_bearerToken, idToken) && idToken != null
-        ? 'idToken'
-        : identical(_bearerToken, accessToken) && accessToken != null
+    final session = sessionService.currentSession;
+    final access = JwtDebugHelper.inspect(session?.accessToken);
+    final id = JwtDebugHelper.inspect(session?.idToken);
+    final selected = session?.accessToken.isNotEmpty == true
         ? 'accessToken'
         : 'none';
     debugPrint('[ChatIA][$context] selectedBearer=$selected');
@@ -94,15 +77,59 @@ class ChatiaApiService {
     debugPrint('[ChatIA][$method] url=$uri');
   }
 
+  void _logFullDebug(String context, String value) {
+    if (!kDebugMode) {
+      return;
+    }
+
+    const chunkSize = 800;
+    debugPrint('[ChatIA][$context] length=${value.length}');
+    for (var index = 0; index < value.length; index += chunkSize) {
+      final end = (index + chunkSize < value.length)
+          ? index + chunkSize
+          : value.length;
+      debugPrint(
+        '[ChatIA][$context] chunk ${index ~/ chunkSize + 1}: ${value.substring(index, end)}',
+      );
+    }
+  }
+
   Uri _uri(String path, [Map<String, String>? queryParameters]) {
     return Uri.parse('$baseUrl$path').replace(queryParameters: queryParameters);
   }
 
+  Future<http.Response> _sendJson(
+    String method,
+    String path, {
+    Map<String, String>? queryParameters,
+    Map<String, String>? headers,
+    String? body,
+    Duration? timeout,
+  }) async {
+    final operation = sessionService.sendAuthorized((accessToken) {
+      final request = http.Request(method, _uri(path, queryParameters));
+      request.headers.addAll(_jsonHeaders(accessToken));
+      if (headers != null) {
+        request.headers.addAll(headers);
+      }
+      if (body != null) {
+        request.body = body;
+      }
+      return request;
+    });
+
+    final streamed = timeout != null
+        ? await operation.timeout(timeout)
+        : await operation;
+    return http.Response.fromStream(streamed);
+  }
+
   Future<Map<String, dynamic>> fetchConfig() async {
-    final uri = _uri('/api/config');
-    final response = await http
-        .get(uri, headers: _jsonHeaders)
-        .timeout(const Duration(seconds: 10));
+    final response = await _sendJson(
+      'GET',
+      '/api/config',
+      timeout: const Duration(seconds: 10),
+    );
     if (response.statusCode != 200) {
       throw Exception(
         'Impossible de charger la configuration : ${response.statusCode}',
@@ -113,16 +140,12 @@ class ChatiaApiService {
   }
 
   Future<void> logout() async {
-    final client = createCredentialedClient();
-    final http.Response response;
-    try {
-      response = await client.post(
-        _uri('/api/auth/logout'),
-        headers: _jsonHeaders,
-      );
-    } finally {
-      client.close();
-    }
+    final streamed = await sessionService.sendAuthorized((accessToken) {
+      final request = http.Request('POST', _uri('/api/auth/logout'));
+      request.headers.addAll(_jsonHeaders(accessToken));
+      return request;
+    });
+    final response = await http.Response.fromStream(streamed);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         'Impossible de fermer la session backend : ${response.statusCode}',
@@ -131,37 +154,31 @@ class ChatiaApiService {
   }
 
   Future<Map<String, dynamic>> refreshAuth() async {
-    final client = createCredentialedClient();
-    final http.Response response;
-    try {
-      response = await client.post(
-        _uri('/api/auth/refresh'),
-        headers: _jsonHeaders,
-      );
-    } finally {
-      client.close();
-    }
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Impossible de rafraichir la session backend : ${response.statusCode}',
-      );
-    }
-
-    return jsonDecode(response.body) as Map<String, dynamic>;
+    final session = await sessionService.refreshAccessToken(force: true);
+    return <String, dynamic>{
+      'token': session.accessToken,
+      'user': {'email': session.email, 'username': session.userName},
+    };
   }
 
   Future<List<Conversation>> fetchConversations({
     String sortBy = 'updatedAt',
     String sortDirection = 'desc',
-    int pageSize = 10,
+    int limit = 25,
+    String? cursor,
+    String? search,
   }) async {
-    final uri = _uri('/api/convos', {
-      'sortBy': sortBy,
-      'sortDirection': sortDirection,
-      'pageSize': '$pageSize',
-    });
-
-    final response = await http.get(uri, headers: _jsonHeaders);
+    final response = await _sendJson(
+      'GET',
+      '/api/convos',
+      queryParameters: {
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+        if (search != null && search.isNotEmpty) 'search': search,
+        'limit': '$limit',
+        'sortBy': sortBy,
+        'sortDirection': sortDirection,
+      },
+    );
     if (response.statusCode != 200) {
       throw Exception(
         'Impossible de charger les conversations : ${response.statusCode}',
@@ -176,9 +193,24 @@ class ChatiaApiService {
     return items.cast<Map<String, dynamic>>().map(_mapApiConversation).toList();
   }
 
+  Future<Conversation> fetchConversation(String conversationId) async {
+    final response = await _sendJson('GET', '/api/convos/$conversationId');
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Impossible de charger la conversation : ${response.statusCode}',
+      );
+    }
+
+    final jsonBody = jsonDecode(response.body);
+    if (jsonBody is! Map<String, dynamic>) {
+      throw Exception('Réponse conversation inattendue.');
+    }
+
+    return _mapApiConversation(jsonBody);
+  }
+
   Future<List<String>> fetchModels() async {
-    final uri = _uri('/api/models');
-    final response = await http.get(uri, headers: _jsonHeaders);
+    final response = await _sendJson('GET', '/api/models');
     if (response.statusCode != 200) {
       throw Exception(
         'Impossible de charger les modèles : ${response.statusCode}',
@@ -207,9 +239,22 @@ class ChatiaApiService {
         .toList();
   }
 
-  Future<List<ChatMessage>> fetchMessages(String conversationId) async {
-    final uri = _uri('/api/messages/$conversationId');
-    final response = await http.get(uri, headers: _jsonHeaders);
+  Future<PaginatedMessagesResponse> fetchMessages(
+    String conversationId, {
+    int pageSize = 25,
+    String? cursor,
+  }) async {
+    final response = await _sendJson(
+      'GET',
+      '/api/messages',
+      queryParameters: {
+        'conversationId': conversationId,
+        'pageSize': '$pageSize',
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+        'sortBy': 'createdAt',
+        'sortDirection': 'asc',
+      },
+    );
     if (response.statusCode != 200) {
       throw Exception(
         'Impossible de charger les messages : ${response.statusCode}',
@@ -217,12 +262,18 @@ class ChatiaApiService {
     }
 
     final jsonBody = jsonDecode(response.body);
-    // L'API peut retourner un tableau direct ou {messages: [...]}
+    // Route recommandée : {messages: [...]} ; fallback sur tableau direct.
     final items = jsonBody is Map<String, dynamic>
         ? (jsonBody['messages'] as List<dynamic>?) ?? []
         : (jsonBody as List<dynamic>);
+    final nextCursor = jsonBody is Map<String, dynamic>
+        ? jsonBody['nextCursor']?.toString()
+        : null;
 
-    return items.cast<Map<String, dynamic>>().map(_mapApiMessage).toList();
+    return PaginatedMessagesResponse(
+      messages: items.cast<Map<String, dynamic>>().map(_mapApiMessage).toList(),
+      nextCursor: nextCursor,
+    );
   }
 
   /// GET /api/messages/:conversationId/:messageId
@@ -231,8 +282,10 @@ class ChatiaApiService {
     String conversationId,
     String messageId,
   ) async {
-    final uri = _uri('/api/messages/$conversationId/$messageId');
-    final response = await http.get(uri, headers: _jsonHeaders);
+    final response = await _sendJson(
+      'GET',
+      '/api/messages/$conversationId/$messageId',
+    );
     if (response.statusCode != 200) {
       throw Exception(
         'Message introuvable ($conversationId/$messageId) : ${response.statusCode}',
@@ -258,7 +311,6 @@ class ChatiaApiService {
     bool isCreatedByUser = true,
     bool error = false,
   }) async {
-    final uri = _uri('/api/messages/$conversationId');
     final body = jsonEncode({
       'messageId': messageId,
       'parentMessageId': parentMessageId,
@@ -268,7 +320,11 @@ class ChatiaApiService {
       'error': error,
     });
 
-    final response = await http.post(uri, headers: _jsonHeaders, body: body);
+    final response = await _sendJson(
+      'POST',
+      '/api/messages/$conversationId',
+      body: body,
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         'Impossible de sauvegarder le message : ${response.statusCode} ${response.body}',
@@ -294,10 +350,13 @@ class ChatiaApiService {
     String messageId, {
     required String text,
   }) async {
-    final uri = _uri('/api/messages/$conversationId/$messageId');
     final body = jsonEncode({'text': text});
 
-    final response = await http.put(uri, headers: _jsonHeaders, body: body);
+    final response = await _sendJson(
+      'PUT',
+      '/api/messages/$conversationId/$messageId',
+      body: body,
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         'Impossible de modifier le message : ${response.statusCode} ${response.body}',
@@ -314,8 +373,10 @@ class ChatiaApiService {
   /// DELETE /api/messages/:conversationId/:messageId
   /// Supprime un message précis d'une conversation.
   Future<void> deleteMessage(String conversationId, String messageId) async {
-    final uri = _uri('/api/messages/$conversationId/$messageId');
-    final response = await http.delete(uri, headers: _jsonHeaders);
+    final response = await _sendJson(
+      'DELETE',
+      '/api/messages/$conversationId/$messageId',
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         'Impossible de supprimer le message : ${response.statusCode} ${response.body}',
@@ -331,8 +392,10 @@ class ChatiaApiService {
     String model = defaultOpenAiModel,
   }) async {
     _logAuthDebug('POST /api/agents/chat/openAI');
-    final uri = _uri('/api/agents/chat/openAI');
-    _logRequestDebug('POST /api/agents/chat/openAI', uri);
+    _logRequestDebug(
+      'POST /api/agents/chat/openAI',
+      _uri('/api/agents/chat/openAI'),
+    );
     final body = jsonEncode({
       'endpoint': 'openAI',
       'model': model,
@@ -341,8 +404,13 @@ class ChatiaApiService {
       'messageId': messageId,
       'text': text,
     });
+    _logFullDebug('POST /api/agents/chat/openAI body', body);
 
-    final response = await http.post(uri, headers: _jsonHeaders, body: body);
+    final response = await _sendJson(
+      'POST',
+      '/api/agents/chat/openAI',
+      body: body,
+    );
     if (response.statusCode != 200) {
       throw Exception(
         'Échec démarrage OpenAI: ${response.statusCode} ${response.body}',
@@ -367,7 +435,8 @@ class ChatiaApiService {
     required String text,
     String? conversationId,
   }) async {
-    final uri = _uri('/api/agents/chat');
+    _logAuthDebug('POST /api/agents/chat');
+    _logRequestDebug('POST /api/agents/chat', _uri('/api/agents/chat'));
     final body = jsonEncode({
       'agent_id': agentId,
       'conversationId': conversationId,
@@ -375,8 +444,9 @@ class ChatiaApiService {
       'messageId': messageId,
       'text': text,
     });
+    _logFullDebug('POST /api/agents/chat body', body);
 
-    final response = await http.post(uri, headers: _jsonHeaders, body: body);
+    final response = await _sendJson('POST', '/api/agents/chat', body: body);
     if (response.statusCode != 200) {
       throw Exception(
         'Échec démarrage chat agent ($agentId): ${response.statusCode} ${response.body}',
@@ -397,6 +467,7 @@ class ChatiaApiService {
     required String messageId,
     required String text,
     String? conversationId,
+    bool resume = false,
   }) async* {
     final startResponse = await startAgentChat(
       agentId: agentId,
@@ -411,19 +482,13 @@ class ChatiaApiService {
       throw Exception('StreamId manquant depuis le backend (agent).');
     }
 
-    await for (final partial in streamChat(streamId)) {
-      yield ChatStreamEvent(
-        conversationId: startResponse.conversationId,
-        content: partial,
-        done: false,
-      );
+    await for (final event in streamChat(
+      streamId,
+      resume: resume,
+      fallbackConversationId: startResponse.conversationId,
+    )) {
+      yield event;
     }
-
-    yield ChatStreamEvent(
-      conversationId: startResponse.conversationId,
-      content: '',
-      done: true,
-    );
   }
 
   Future<UploadedFileInfo> uploadImageFile({
@@ -504,14 +569,15 @@ class ChatiaApiService {
       throw Exception('Fichier vide ou non lisible.');
     }
 
-    final request = http.MultipartRequest('POST', _uri(path));
-    request.headers.addAll(_baseHeaders);
-    request.fields.addAll(fields);
-    request.files.add(
-      http.MultipartFile.fromBytes(fileField, bytes, filename: filename),
-    );
-
-    final streamedResponse = await request.send();
+    final streamedResponse = await sessionService.sendAuthorized((accessToken) {
+      final request = http.MultipartRequest('POST', _uri(path));
+      request.headers.addAll(_baseHeaders(accessToken));
+      request.fields.addAll(fields);
+      request.files.add(
+        http.MultipartFile.fromBytes(fileField, bytes, filename: filename),
+      );
+      return request;
+    });
     final response = await http.Response.fromStream(streamedResponse);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -534,6 +600,7 @@ class ChatiaApiService {
     required String text,
     String? conversationId,
     String model = defaultOpenAiModel,
+    bool resume = false,
   }) async* {
     final startResponse = await startOpenAIChat(
       conversationId: conversationId,
@@ -548,94 +615,358 @@ class ChatiaApiService {
       throw Exception('StreamId manquant depuis le backend.');
     }
 
-    await for (final partial in streamChat(streamId)) {
-      yield ChatStreamEvent(
-        conversationId: startResponse.conversationId,
-        content: partial,
-        done: false,
+    await for (final event in streamChat(
+      streamId,
+      resume: resume,
+      fallbackConversationId: startResponse.conversationId,
+    )) {
+      yield event;
+    }
+  }
+
+  Stream<ChatStreamEvent> streamChat(
+    String streamId, {
+    bool resume = false,
+    String? fallbackConversationId,
+  }) {
+    AuthorizedStreamConnection? connection;
+    StreamSubscription<String>? subscription;
+    final controller = StreamController<ChatStreamEvent>();
+
+    controller.onCancel = () async {
+      await subscription?.cancel();
+      await connection?.close();
+    };
+
+    () async {
+      _logAuthDebug('GET /api/agents/chat/stream/$streamId');
+      final uri = _uri('/api/agents/chat/stream/$streamId', {
+        if (resume) 'resume': 'true',
+      });
+      _logRequestDebug('GET /api/agents/chat/stream/$streamId', uri);
+      connection = await sessionService.openAuthorizedStream((accessToken) {
+        final request = http.Request('GET', uri);
+        request.headers.addAll(_baseHeaders(accessToken));
+        request.headers['Accept'] = 'text/event-stream';
+        return request;
+      });
+      final response = connection!.response;
+      if (response.statusCode != 200) {
+        await connection!.close();
+        controller.addError(
+          Exception('Échec de connexion au flux SSE : ${response.statusCode}'),
+        );
+        await controller.close();
+        return;
+      }
+
+      final decoded = response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter());
+      final blockLines = <String>[];
+
+      Future<void> terminate() async {
+        await subscription?.cancel();
+        await connection?.close();
+        if (!controller.isClosed) {
+          await controller.close();
+        }
+      }
+
+      subscription = decoded.listen(
+        (rawLine) {
+          final line = rawLine.trimRight();
+          if (line.isEmpty) {
+            final event = _parseSseEventBlock(
+              blockLines,
+              fallbackConversationId: fallbackConversationId,
+            );
+            blockLines.clear();
+            if (event == null) {
+              return;
+            }
+            controller.add(event);
+            if (event.error != null || event.done) {
+              terminate();
+            }
+            return;
+          }
+
+          blockLines.add(line);
+        },
+        onError: (error, stackTrace) {
+          controller.addError(error, stackTrace);
+          terminate();
+        },
+        onDone: () async {
+          if (blockLines.isNotEmpty) {
+            final event = _parseSseEventBlock(
+              blockLines,
+              fallbackConversationId: fallbackConversationId,
+            );
+            blockLines.clear();
+            if (event != null) {
+              controller.add(event);
+            }
+          }
+          await terminate();
+        },
+        cancelOnError: true,
+      );
+    }();
+
+    return controller.stream;
+  }
+
+  ChatStreamEvent? _parseSseEventBlock(
+    List<String> blockLines, {
+    String? fallbackConversationId,
+  }) {
+    if (blockLines.isEmpty) {
+      return null;
+    }
+
+    String? eventName;
+    final dataLines = <String>[];
+
+    for (final line in blockLines) {
+      if (line.startsWith('event:')) {
+        eventName = line.substring(6).trim();
+        continue;
+      }
+      if (line.startsWith('data:')) {
+        dataLines.add(line.substring(5).trimLeft());
+        continue;
+      }
+      if (line.startsWith('data')) {
+        dataLines.add(line.substring(4).trimLeft());
+      }
+    }
+
+    final rawData = dataLines.join('\n').trim();
+    if (rawData.isEmpty ||
+        rawData == '[DONE]' ||
+        rawData.toLowerCase() == 'done') {
+      return null;
+    }
+
+    final parsedJson = _tryParseJsonObject(rawData);
+    final payload = parsedJson ?? <String, dynamic>{'message': rawData};
+    final normalizedEvent = eventName?.isNotEmpty == true
+        ? eventName!
+        : 'message';
+    final payloadEvent = payload['event']?.toString();
+    final resolvedEvent = payloadEvent != null && payloadEvent.isNotEmpty
+        ? payloadEvent
+        : normalizedEvent;
+
+    if (normalizedEvent == 'error' || resolvedEvent == 'error') {
+      return ChatStreamEvent.error(
+        error:
+            payload['error']?.toString() ??
+            payload['message']?.toString() ??
+            'Erreur SSE inconnue',
+        rawEvent: resolvedEvent,
+        rawPayload: payload,
+        conversationId:
+            _extractConversationId(payload) ?? fallbackConversationId,
       );
     }
 
-    yield ChatStreamEvent(
-      conversationId: startResponse.conversationId,
-      content: '',
-      done: true,
+    final content = _extractMessageText(payload, resolvedEvent: resolvedEvent);
+    final isFinal = payload['final'] == true;
+    final isSync = payload['sync'] == true;
+    final isCreated = payload['created'] == true;
+
+    return ChatStreamEvent(
+      conversationId: _extractConversationId(payload) ?? fallbackConversationId,
+      content: content,
+      done: isFinal,
+      event: resolvedEvent,
+      title:
+          payload['title']?.toString() ??
+          (payload['titleEvent'] is Map<String, dynamic>
+              ? (payload['titleEvent'] as Map<String, dynamic>)['data']
+                        is Map<String, dynamic>
+                    ? ((payload['titleEvent'] as Map<String, dynamic>)['data']
+                              as Map<String, dynamic>)['title']
+                          ?.toString()
+                    : null
+              : null),
+      isSync: isSync,
+      isCreated: isCreated,
+      rawPayload: payload,
+      requestMessage:
+          _asMap(payload['requestMessage']) ??
+          (isCreated ? _asMap(payload['message']) : null),
+      responseMessage: _asMap(payload['responseMessage']),
+      resumeState: _asMap(payload['resumeState']),
+      pendingEvents: _asListOfMaps(payload['pendingEvents']),
     );
   }
 
-  Stream<String> streamChat(String streamId) async* {
-    _logAuthDebug('GET /api/agents/chat/stream/$streamId');
-    final uri = _uri('/api/agents/chat/stream/$streamId');
-    _logRequestDebug('GET /api/agents/chat/stream/$streamId', uri);
-    final request = http.Request('GET', uri);
-    request.headers.addAll(_baseHeaders);
-    request.headers['Accept'] = 'text/event-stream';
-
-    final response = await request.send();
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Échec de connexion au flux SSE : ${response.statusCode}',
-      );
-    }
-
-    final decoded = response.stream
-        .transform(utf8.decoder)
-        .transform(const LineSplitter());
-    final buffer = StringBuffer();
-
-    await for (final rawLine in decoded) {
-      final line = rawLine.trimRight();
-      if (line.isEmpty) {
-        if (buffer.isNotEmpty) {
-          final chunk = _extractSseText(buffer.toString());
-          buffer.clear();
-          if (chunk.isNotEmpty) {
-            yield chunk;
-          }
-        }
-        continue;
+  Map<String, dynamic>? _tryParseJsonObject(String rawData) {
+    try {
+      final decoded = jsonDecode(rawData);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
       }
-
-      if (line.startsWith('data:')) {
-        buffer.write(line.substring(5).trim());
-      } else if (line.startsWith('data')) {
-        buffer.write(line.substring(4).trim());
-      }
+    } catch (_) {
+      // Fall through to raw text.
     }
-
-    if (buffer.isNotEmpty) {
-      final chunk = _extractSseText(buffer.toString());
-      if (chunk.isNotEmpty) {
-        yield chunk;
-      }
-    }
+    return null;
   }
 
-  String _extractSseText(String raw) {
-    final trimmed = raw.trim();
-    if (trimmed.isEmpty) return '';
-    if (trimmed == '[DONE]' || trimmed.toLowerCase() == 'done') {
+  String? _extractConversationId(Map<String, dynamic> payload) {
+    final direct = payload['conversationId']?.toString();
+    if (direct != null && direct.isNotEmpty) {
+      return direct;
+    }
+
+    final conversation = _asMap(payload['conversation']);
+    final fromConversation = conversation?['conversationId']?.toString();
+    if (fromConversation != null && fromConversation.isNotEmpty) {
+      return fromConversation;
+    }
+
+    final responseMessage = _asMap(payload['responseMessage']);
+    final fromResponse = responseMessage?['conversationId']?.toString();
+    if (fromResponse != null && fromResponse.isNotEmpty) {
+      return fromResponse;
+    }
+
+    final resumeState = _asMap(payload['resumeState']);
+    return resumeState?['conversationId']?.toString();
+  }
+
+  String _extractMessageText(
+    Map<String, dynamic> payload, {
+    required String resolvedEvent,
+  }) {
+    if (payload['final'] == true) {
+      final responseMessage = _asMap(payload['responseMessage']);
+      final finalContent = _extractTextFromContent(responseMessage?['content']);
+      if (finalContent.isNotEmpty) {
+        return finalContent;
+      }
+
+      final responseText = responseMessage?['text']?.toString();
+      if (responseText != null && responseText.isNotEmpty) {
+        return responseText;
+      }
+    }
+
+    if (resolvedEvent == 'on_message_delta') {
+      final data = _asMap(payload['data']);
+      final delta = _asMap(data?['delta']);
+      final deltaContent = _extractTextFromContent(delta?['content']);
+      if (deltaContent.isNotEmpty) {
+        return deltaContent;
+      }
+    }
+
+    if (payload['created'] == true) {
       return '';
     }
 
-    try {
-      final jsonBody = jsonDecode(trimmed);
-      if (jsonBody is Map<String, dynamic>) {
-        if (jsonBody.containsKey('delta')) {
-          return jsonBody['delta']?.toString() ?? '';
-        }
-        if (jsonBody.containsKey('text')) {
-          return jsonBody['text']?.toString() ?? '';
-        }
-        if (jsonBody.containsKey('message')) {
-          return jsonBody['message']?.toString() ?? '';
-        }
-      }
-    } catch (_) {
-      // Not JSON, continue with raw text.
+    final delta = payload['delta']?.toString();
+    if (delta != null && delta.isNotEmpty) {
+      return delta;
     }
 
-    return trimmed;
+    final text = payload['text']?.toString();
+    if (text != null && text.isNotEmpty) {
+      return text;
+    }
+
+    final message = _asMap(payload['message']);
+    final messageText = message?['text']?.toString();
+    if (messageText != null && messageText.isNotEmpty) {
+      return messageText;
+    }
+
+    final messageContent = _extractTextFromContent(message?['content']);
+    if (messageContent.isNotEmpty) {
+      return messageContent;
+    }
+
+    final messageString = payload['message']?.toString();
+    if (messageString != null && messageString.isNotEmpty) {
+      return messageString;
+    }
+
+    final responseMessage = _asMap(payload['responseMessage']);
+    final responseContent = _extractTextFromContent(
+      responseMessage?['content'],
+    );
+    if (responseContent.isNotEmpty) {
+      return responseContent;
+    }
+
+    final responseText = responseMessage?['text']?.toString();
+    if (responseText != null && responseText.isNotEmpty) {
+      return responseText;
+    }
+
+    final resumeState = _asMap(payload['resumeState']);
+    final aggregatedContent = resumeState?['aggregatedContent'];
+    if (aggregatedContent is List && aggregatedContent.isNotEmpty) {
+      return aggregatedContent.map((item) => item.toString()).join();
+    }
+
+    return '';
+  }
+
+  String _extractTextFromContent(Object? content) {
+    if (content is! List) {
+      return '';
+    }
+
+    final buffer = StringBuffer();
+    for (final item in content) {
+      final block = _asMap(item);
+      if (block == null) {
+        continue;
+      }
+
+      final type = block['type']?.toString();
+      if (type != null && type != 'text') {
+        continue;
+      }
+
+      final directText = block['text']?.toString();
+      if (directText != null && directText.isNotEmpty) {
+        buffer.write(directText);
+        continue;
+      }
+
+      final nestedText = _asMap(block['text'])?['value']?.toString();
+      if (nestedText != null && nestedText.isNotEmpty) {
+        buffer.write(nestedText);
+      }
+    }
+
+    return buffer.toString();
+  }
+
+  Map<String, dynamic>? _asMap(Object? value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+    return null;
+  }
+
+  List<Map<String, dynamic>> _asListOfMaps(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
   }
 
   Conversation _mapApiConversation(Map<String, dynamic> json) {
@@ -730,16 +1061,62 @@ class OpenAIChatResponse {
   final String? conversationId;
 }
 
+class PaginatedMessagesResponse {
+  const PaginatedMessagesResponse({
+    required this.messages,
+    required this.nextCursor,
+  });
+
+  final List<ChatMessage> messages;
+  final String? nextCursor;
+}
+
 class ChatStreamEvent {
   ChatStreamEvent({
     required this.conversationId,
     required this.content,
     required this.done,
+    required this.event,
+    this.title,
+    this.isSync = false,
+    this.isCreated = false,
+    this.error,
+    this.rawPayload = const {},
+    this.requestMessage,
+    this.responseMessage,
+    this.resumeState,
+    this.pendingEvents = const [],
   });
+
+  factory ChatStreamEvent.error({
+    required String error,
+    required String rawEvent,
+    required Map<String, dynamic> rawPayload,
+    String? conversationId,
+  }) {
+    return ChatStreamEvent(
+      conversationId: conversationId,
+      content: '',
+      done: true,
+      event: rawEvent,
+      error: error,
+      rawPayload: rawPayload,
+    );
+  }
 
   final String? conversationId;
   final String content;
   final bool done;
+  final String event;
+  final String? title;
+  final bool isSync;
+  final bool isCreated;
+  final String? error;
+  final Map<String, dynamic> rawPayload;
+  final Map<String, dynamic>? requestMessage;
+  final Map<String, dynamic>? responseMessage;
+  final Map<String, dynamic>? resumeState;
+  final List<Map<String, dynamic>> pendingEvents;
 }
 
 class UploadedFileInfo {
