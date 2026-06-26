@@ -477,6 +477,7 @@ class ChatController extends ChangeNotifier {
     return _uploadAttachedFile(
       assistantId: assistantId,
       userMessageId: userMessage.id,
+      promptText: text.trim().isEmpty ? 'Analyse cette image.' : text.trim(),
       bytes: bytes,
       filename: name,
       size: size,
@@ -522,6 +523,7 @@ class ChatController extends ChangeNotifier {
   Future<void> _uploadAttachedFile({
     required String assistantId,
     required String userMessageId,
+    required String promptText,
     required List<int> bytes,
     required String filename,
     required String size,
@@ -534,6 +536,7 @@ class ChatController extends ChangeNotifier {
       errorMessage = null;
       notifyListeners();
 
+      // ── 1. Upload du fichier ────────────────────────────────────────────────
       final tempFileId = _uuidV4();
       final uploaded = isImage && width != null && height != null
           ? await _apiService.uploadImageFile(
@@ -549,6 +552,7 @@ class ChatController extends ChangeNotifier {
               tempFileId: tempFileId,
             );
 
+      // Mettre à jour le message local avec l'URL backend
       if (uploaded.url.isNotEmpty) {
         _updateMessage(
           userMessageId,
@@ -561,11 +565,35 @@ class ChatController extends ChangeNotifier {
         );
       }
 
-      _updateAssistantMessage(
-        assistantId,
-        isImage
-            ? 'Image envoyée au backend LibreChat.'
-            : 'Fichier envoyé au backend LibreChat : $filename.',
+      // ── 2. Envoi chat avec le file_id pour que l'IA analyse ─────────────────
+      final conversationId = _serverConversationId(_selectedConversation.id);
+      final parentMessageId = _parentMessageId(_selectedConversation);
+      final chatMessageId = _uuidV4();
+
+      // Construction du payload fichier pour LibreChat
+      final filePayload = <String, dynamic>{
+        'file_id': uploaded.fileId.isNotEmpty ? uploaded.fileId : tempFileId,
+        'temp_file_id': tempFileId,
+        'type': uploaded.type.isNotEmpty
+            ? uploaded.type
+            : (isImage ? 'image/jpeg' : 'application/octet-stream'),
+        'filepath': uploaded.filepath,
+        'filename': filename,
+        'source': uploaded.source.isNotEmpty ? uploaded.source : 'local',
+        if (uploaded.width != null) 'width': uploaded.width,
+        if (uploaded.height != null) 'height': uploaded.height,
+      };
+
+      await _consumeChatStream(
+        assistantId: assistantId,
+        stream: _apiService.sendOpenAIChat(
+          conversationId: conversationId,
+          parentMessageId: parentMessageId,
+          messageId: chatMessageId,
+          text: promptText,
+          files: [filePayload],
+        ),
+        errorPrefix: 'Erreur analyse image',
       );
     } catch (error) {
       errorMessage = error.toString();
@@ -573,7 +601,6 @@ class ChatController extends ChangeNotifier {
         assistantId,
         'Erreur d\'upload : ${error.toString()}',
       );
-    } finally {
       isStreaming = false;
       notifyListeners();
     }

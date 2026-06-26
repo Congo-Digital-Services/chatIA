@@ -390,20 +390,25 @@ class ChatiaApiService {
     required String text,
     String? conversationId,
     String model = defaultOpenAiModel,
+    List<Map<String, dynamic>>? files,
   }) async {
     _logAuthDebug('POST /api/agents/chat/openAI');
     _logRequestDebug(
       'POST /api/agents/chat/openAI',
       _uri('/api/agents/chat/openAI'),
     );
-    final body = jsonEncode({
+    final bodyMap = <String, dynamic>{
       'endpoint': 'openAI',
       'model': model,
       'conversationId': conversationId,
       'parentMessageId': parentMessageId,
       'messageId': messageId,
       'text': text,
-    });
+    };
+    if (files != null && files.isNotEmpty) {
+      bodyMap['files'] = files;
+    }
+    final body = jsonEncode(bodyMap);
     _logFullDebug('POST /api/agents/chat/openAI body', body);
 
     final response = await _sendJson(
@@ -601,6 +606,7 @@ class ChatiaApiService {
     String? conversationId,
     String model = defaultOpenAiModel,
     bool resume = false,
+    List<Map<String, dynamic>>? files,
   }) async* {
     final startResponse = await startOpenAIChat(
       conversationId: conversationId,
@@ -608,6 +614,7 @@ class ChatiaApiService {
       messageId: messageId,
       text: text,
       model: model,
+      files: files,
     );
 
     final streamId = startResponse.streamId;
