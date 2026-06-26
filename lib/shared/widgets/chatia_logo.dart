@@ -9,24 +9,20 @@ class ChatiaLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Container(
+        Image.asset(
+          'assets/icons/congo_logo.png',
           width: 54,
           height: 54,
-          decoration: BoxDecoration(
-            color: const Color(0xFF111111),
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: const Center(
-            child: Icon(Icons.graphic_eq_rounded, color: Colors.white),
-          ),
+          fit: BoxFit.contain,
         ),
         const SizedBox(width: 12),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text('ChatIA', style: Theme.of(context).textTheme.headlineMedium),
             Text(
-              'Assistant IA securise',
+              'Assistant IA sécurisé',
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: AppThemeColors.textMuted),

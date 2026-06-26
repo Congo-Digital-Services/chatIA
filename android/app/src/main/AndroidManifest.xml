@@ -1,4 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Accès galerie Android 13+ -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- Accès galerie Android <= 12 -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- Accès caméra (optionnel — pour prendre une photo directement) -->
+    <uses-permission android:name="android.permission.CAMERA" />
     <application
         android:label="ChatIA"
         android:name="${applicationName}"
