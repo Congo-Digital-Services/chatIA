@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -44,7 +43,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     // Écran de restauration de session
     if (auth.isRestoring) {
@@ -73,111 +71,86 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     return Scaffold(
       backgroundColor: AppThemeColors.background,
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: isDark
-                ? [const Color(0xFF0F0F0D), const Color(0xFF1C1C19)]
-                : [const Color(0xFFF0EAE0), const Color(0xFFE5DAC8)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 28,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight,
                 ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // ── Titre ──────────────────────────────────────────────
-                      Text(
-                        'ChatIA',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.displaySmall?.copyWith(
-                          letterSpacing: -1.5,
-                          color: AppThemeColors.textStrong,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Votre assistant IA sécurisé,\npowered by Congo Digital Services.',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: AppThemeColors.textSoft,
-                          height: 1.5,
-                        ),
-                      ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.max,
+                  children: [
 
-                      const SizedBox(height: 24),
+                    // ── Offset supérieur : ancre le contenu dans le tiers haut ──
+                    SizedBox(height: constraints.maxHeight * 0.09),
 
-                      // ── Carte d'authentification ───────────────────────────
-                      _AuthCard(auth: auth, isDark: isDark),
+                    // ── Logo officiel ─────────────────────────────────────────
+                    Image.asset(
+                      'assets/icons/congo_logo.png',
+                      height: 100,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(height: 24),
+
+                    // ── Titre ──────────────────────────────────────────────────
+                    Text(
+                      'ChatIA',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.displaySmall?.copyWith(
+                        color: AppThemeColors.textStrong,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Votre assistant IA sécurisé,\npowered by Congo Digital Services.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: AppThemeColors.textSoft,
+                        height: 1.5,
+                      ),
+                    ),
+
+                    // ── Espace flexible → pousse le bouton vers le bas ─────────
+                    const Spacer(),
+
+                    // ── Bouton d'authentification ──────────────────────────────
+                    _KeycloakButton(
+                      isLoading: auth.isLoading,
+                      onTap: auth.isLoading
+                          ? null
+                          : () => ref.read(authControllerProvider).signInWithSso(),
+                    ),
+                    if (auth.errorMessage != null) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        auth.errorMessage!,
+                        style: const TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                     ],
-                  ),
+
+                    // ── Marge de sécurité en bas ───────────────────────────────
+                    const SizedBox(height: 32),
+                  ],
                 ),
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
   }
 }
 
-// ── Carte principale d'auth ─────────────────────────────────────────────────
-class _AuthCard extends ConsumerWidget {
-  const _AuthCard({required this.auth, required this.isDark});
 
-  final AuthController auth;
-  final bool isDark;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isDark
-            ? AppThemeColors.card
-            : const Color.fromARGB(255, 9, 8, 8).withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppThemeColors.stroke),
-        boxShadow: AppThemeShadows.soft,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _KeycloakButton(
-            isLoading: auth.isLoading,
-            onTap: auth.isLoading
-                ? null
-                : () => ref.read(authControllerProvider).signInWithSso(),
-          ),
-          if (auth.errorMessage != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              auth.errorMessage!,
-              style: const TextStyle(
-                color: Colors.redAccent,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
 
 // ── Bouton Keycloak ─────────────────────────────────────────────────────────
 class _KeycloakButton extends StatelessWidget {
@@ -188,62 +161,62 @@ class _KeycloakButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        width: double.infinity,
-        height: 48,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: isLoading
-                ? [
-                    const Color(0xFF111111).withValues(alpha: 0.55),
-                    const Color(0xFF111111).withValues(alpha: 0.55),
-                  ]
-                : [const Color(0xFF111111), const Color(0xFF111111)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = isDark ? Colors.white : Colors.black;
+    final secondaryColor = isDark ? Colors.black : Colors.white;
+
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: isLoading ? null : onTap,
+        style: OutlinedButton.styleFrom(
+          backgroundColor: primaryColor,
+          side: BorderSide(color: primaryColor, width: 1),
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: isLoading
-              ? null
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.18),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             if (isLoading)
-              const SizedBox(
+              SizedBox(
                 width: 18,
                 height: 18,
                 child: CircularProgressIndicator(
-                  color: Color.fromARGB(255, 234, 34, 34),
+                  color: secondaryColor,
                   strokeWidth: 2,
                 ),
               )
-            else
-              const Icon(
-                CupertinoIcons.lock_fill,
-                color: Colors.white,
-                size: 16,
+            else ...[
+              Text(
+                'Continuer',
+                style: TextStyle(
+                  color: secondaryColor,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            const SizedBox(width: 10),
-            Text(
-              isLoading ? 'Connexion en cours…' : 'Continue',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.2,
+              const SizedBox(width: 8),
+              Icon(
+                Icons.arrow_forward_rounded,
+                color: secondaryColor,
+                size: 18,
               ),
-            ),
+            ],
+            if (isLoading) ...[
+              const SizedBox(width: 10),
+              Text(
+                'Connexion en cours…',
+                style: TextStyle(
+                  color: secondaryColor,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ],
         ),
       ),

@@ -39,9 +39,7 @@ class SettingsTile extends StatelessWidget {
     Widget tileContent = Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isDark
-            ? Colors.black.withValues(alpha: 0.24)
-            : AppThemeColors.card.withValues(alpha: 0.96),
+        color: AppThemeColors.card,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppThemeColors.stroke),
       ),
@@ -54,9 +52,7 @@ class SettingsTile extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: isDark
-                      ? AppThemeColors.pillSelected
-                      : AppThemeColors.pill,
+                  color: AppThemeColors.pill,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(icon, size: 20, color: AppThemeColors.textStrong),
@@ -181,7 +177,9 @@ class SettingsTile extends StatelessWidget {
                             style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
-                              color: AppThemeColors.textStrong,
+                              color: (selectedSegmentIndex ?? 0) == i
+                                  ? (isDark ? Colors.black : AppThemeColors.textStrong)
+                                  : AppThemeColors.textSoft,
                             ),
                           ),
                         ),

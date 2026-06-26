@@ -106,9 +106,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                         onTap: () => _scaffoldKey.currentState?.openDrawer(),
                         tooltip: 'Menu',
                       ),
-                      const SizedBox(width: 10),
                       const Spacer(),
-                      const SizedBox(width: 10),
+                      Image.asset(
+                        'assets/icons/congo_logo.png',
+                        height: 36,
+                        fit: BoxFit.contain,
+                      ),
+                      const Spacer(),
                       // Nouvelle conversation / note
                       _HeaderButton(
                         icon: isNote
