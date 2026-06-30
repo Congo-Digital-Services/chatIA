@@ -26,7 +26,8 @@ final chatiaConfigProvider = FutureProvider<Map<String, dynamic>>((ref) {
 class ChatiaApiService {
   ChatiaApiService({required this.baseUrl, required this.sessionService});
 
-  static const defaultOpenAiModel = 'gpt-4';
+  static const liteLlmEndpoint = 'LiteLLM';
+  static const defaultLiteLlmModel = 'gemini/gemini-2.5-flash';
 
   final String baseUrl;
   final LibreChatSessionService sessionService;
@@ -218,25 +219,47 @@ class ChatiaApiService {
     }
 
     final jsonBody = jsonDecode(response.body);
-    final items = jsonBody is Map<String, dynamic>
-        ? (jsonBody['models'] as List<dynamic>?) ?? []
-        : (jsonBody as List<dynamic>);
+    final models = <String>[];
 
-    return items
-        .map((item) {
-          if (item is String) {
-            return item;
-          }
-          if (item is Map<String, dynamic>) {
-            return item['name']?.toString() ??
-                item['id']?.toString() ??
-                item['model']?.toString() ??
-                '';
-          }
-          return '';
-        })
-        .where((model) => model.isNotEmpty)
-        .toList();
+    void collect(dynamic value) {
+      if (value is String) {
+        final model = value.trim();
+        if (model.isNotEmpty) {
+          models.add(model);
+        }
+        return;
+      }
+
+      if (value is List) {
+        for (final item in value) {
+          collect(item);
+        }
+        return;
+      }
+
+      if (value is Map<String, dynamic>) {
+        if (value.containsKey(liteLlmEndpoint)) {
+          collect(value[liteLlmEndpoint]);
+          return;
+        }
+
+        if (value.containsKey('models')) {
+          collect(value['models']);
+          return;
+        }
+
+        final directModel =
+            value['name']?.toString() ??
+            value['id']?.toString() ??
+            value['model']?.toString();
+        if (directModel != null && directModel.trim().isNotEmpty) {
+          models.add(directModel.trim());
+        }
+      }
+    }
+
+    collect(jsonBody);
+    return models.toSet().toList();
   }
 
   Future<PaginatedMessagesResponse> fetchMessages(
@@ -384,41 +407,51 @@ class ChatiaApiService {
     }
   }
 
-  Future<OpenAIChatResponse> startOpenAIChat({
+  Future<OpenAIChatResponse> startLiteLlmChat({
     required String parentMessageId,
     required String messageId,
     required String text,
     String? conversationId,
-    String model = defaultOpenAiModel,
+    String model = defaultLiteLlmModel,
     List<Map<String, dynamic>>? files,
   }) async {
-    _logAuthDebug('POST /api/agents/chat/openAI');
+    _logAuthDebug('POST /api/agents/chat/$liteLlmEndpoint');
     _logRequestDebug(
-      'POST /api/agents/chat/openAI',
-      _uri('/api/agents/chat/openAI'),
+      'POST /api/agents/chat/$liteLlmEndpoint',
+      _uri('/api/agents/chat/$liteLlmEndpoint'),
     );
     final bodyMap = <String, dynamic>{
-      'endpoint': 'openAI',
-      'model': model,
-      'conversationId': conversationId,
+      'text': text,
+      'sender': 'User',
+      'clientTimestamp': DateTime.now().toIso8601String(),
+      'isCreatedByUser': true,
       'parentMessageId': parentMessageId,
       'messageId': messageId,
-      'text': text,
+      'error': false,
+      'endpoint': liteLlmEndpoint,
+      'endpointType': 'custom',
+      'model': model,
+      'key': 'never',
+      'isTemporary': false,
+      'isRegenerate': false,
+      'isContinued': false,
+      if (conversationId != null && conversationId.isNotEmpty)
+        'conversationId': conversationId,
     };
     if (files != null && files.isNotEmpty) {
       bodyMap['files'] = files;
     }
     final body = jsonEncode(bodyMap);
-    _logFullDebug('POST /api/agents/chat/openAI body', body);
+    _logFullDebug('POST /api/agents/chat/$liteLlmEndpoint body', body);
 
     final response = await _sendJson(
       'POST',
-      '/api/agents/chat/openAI',
+      '/api/agents/chat/$liteLlmEndpoint',
       body: body,
     );
     if (response.statusCode != 200) {
       throw Exception(
-        'Échec démarrage OpenAI: ${response.statusCode} ${response.body}',
+        'Échec démarrage $liteLlmEndpoint: ${response.statusCode} ${response.body}',
       );
     }
 
@@ -502,7 +535,7 @@ class ChatiaApiService {
     required String tempFileId,
     required int width,
     required int height,
-    String endpoint = 'openAI',
+    String endpoint = liteLlmEndpoint,
   }) async {
     if (width <= 0 || height <= 0) {
       throw Exception('Dimensions image manquantes pour le backend ChatIA.');
@@ -528,7 +561,7 @@ class ChatiaApiService {
     required List<int> bytes,
     required String filename,
     required String tempFileId,
-    String endpoint = 'openAI',
+    String endpoint = liteLlmEndpoint,
   }) async {
     final data = await _sendMultipartJson(
       path: '/api/files',
@@ -599,16 +632,16 @@ class ChatiaApiService {
     return decoded;
   }
 
-  Stream<ChatStreamEvent> sendOpenAIChat({
+  Stream<ChatStreamEvent> sendLiteLlmChat({
     required String parentMessageId,
     required String messageId,
     required String text,
     String? conversationId,
-    String model = defaultOpenAiModel,
+    String model = defaultLiteLlmModel,
     bool resume = false,
     List<Map<String, dynamic>>? files,
   }) async* {
-    final startResponse = await startOpenAIChat(
+    final startResponse = await startLiteLlmChat(
       conversationId: conversationId,
       parentMessageId: parentMessageId,
       messageId: messageId,
@@ -750,6 +783,8 @@ class ChatiaApiService {
       }
     }
 
+    _logFullDebug('SSE block', blockLines.join('\n'));
+
     final rawData = dataLines.join('\n').trim();
     if (rawData.isEmpty ||
         rawData == '[DONE]' ||
@@ -781,7 +816,10 @@ class ChatiaApiService {
     }
 
     final content = _extractMessageText(payload, resolvedEvent: resolvedEvent);
-    final isFinal = payload['final'] == true;
+    final isFinal =
+        payload['final'] == true ||
+        _hasChoiceFinishReason(payload) ||
+        resolvedEvent == 'done';
     final isSync = payload['sync'] == true;
     final isCreated = payload['created'] == true;
 
@@ -850,6 +888,11 @@ class ChatiaApiService {
     Map<String, dynamic> payload, {
     required String resolvedEvent,
   }) {
+    final choicesContent = _extractChoicesText(payload['choices']);
+    if (choicesContent.isNotEmpty) {
+      return choicesContent;
+    }
+
     if (payload['final'] == true) {
       final responseMessage = _asMap(payload['responseMessage']);
       final finalContent = _extractTextFromContent(responseMessage?['content']);
@@ -886,10 +929,20 @@ class ChatiaApiService {
       return text;
     }
 
+    final content = _extractStringOrContent(payload['content']);
+    if (content.isNotEmpty) {
+      return content;
+    }
+
     final message = _asMap(payload['message']);
     final messageText = message?['text']?.toString();
     if (messageText != null && messageText.isNotEmpty) {
       return messageText;
+    }
+
+    final stringMessageContent = _extractStringOrContent(message?['content']);
+    if (stringMessageContent.isNotEmpty) {
+      return stringMessageContent;
     }
 
     final messageContent = _extractTextFromContent(message?['content']);
@@ -924,7 +977,73 @@ class ChatiaApiService {
     return '';
   }
 
+  bool _hasChoiceFinishReason(Map<String, dynamic> payload) {
+    final choices = payload['choices'];
+    if (choices is! List || choices.isEmpty) {
+      return false;
+    }
+
+    for (final choice in choices) {
+      final map = _asMap(choice);
+      final finishReason = map?['finish_reason']?.toString();
+      if (finishReason != null &&
+          finishReason.isNotEmpty &&
+          finishReason.toLowerCase() != 'null') {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  String _extractChoicesText(Object? rawChoices) {
+    if (rawChoices is! List) {
+      return '';
+    }
+
+    final buffer = StringBuffer();
+    for (final choice in rawChoices) {
+      final map = _asMap(choice);
+      if (map == null) {
+        continue;
+      }
+
+      final delta = _asMap(map['delta']);
+      final deltaContent = _extractStringOrContent(delta?['content']);
+      if (deltaContent.isNotEmpty) {
+        buffer.write(deltaContent);
+        continue;
+      }
+
+      final message = _asMap(map['message']);
+      final messageContent = _extractStringOrContent(message?['content']);
+      if (messageContent.isNotEmpty) {
+        buffer.write(messageContent);
+        continue;
+      }
+
+      final text = map['text']?.toString();
+      if (text != null && text.isNotEmpty) {
+        buffer.write(text);
+      }
+    }
+
+    return buffer.toString();
+  }
+
+  String _extractStringOrContent(Object? value) {
+    if (value is String) {
+      return value;
+    }
+
+    return _extractTextFromContent(value);
+  }
+
   String _extractTextFromContent(Object? content) {
+    if (content is String) {
+      return content;
+    }
+
     if (content is! List) {
       return '';
     }

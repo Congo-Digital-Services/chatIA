@@ -97,7 +97,6 @@ class SettingsPage extends ConsumerWidget {
               subtitle: getThemeSubtitle(),
             ),
 
-
             const SizedBox(height: 32),
 
             // ── Langue ───────────────────────────────────────────────────────
@@ -192,7 +191,10 @@ class SettingsPage extends ConsumerWidget {
                       },
                       style: OutlinedButton.styleFrom(
                         backgroundColor: AppThemeColors.card,
-                        side: BorderSide(color: AppThemeColors.stroke, width: 1),
+                        side: BorderSide(
+                          color: AppThemeColors.stroke,
+                          width: 1,
+                        ),
                         padding: EdgeInsets.zero,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -236,7 +238,6 @@ class SettingsPage extends ConsumerWidget {
                       color: AppThemeColors.textMuted,
                     ),
                   ),
-
                 ],
               ),
             ),
@@ -353,7 +354,9 @@ class _ThemeSegmentTile extends StatelessWidget {
                         boxShadow: isSelected && !isDark
                             ? [
                                 BoxShadow(
-                                  color: AppThemeColors.textStrong.withValues(alpha: 0.06),
+                                  color: AppThemeColors.textStrong.withValues(
+                                    alpha: 0.06,
+                                  ),
                                   blurRadius: 4,
                                   offset: const Offset(0, 2),
                                 ),
@@ -367,7 +370,9 @@ class _ThemeSegmentTile extends StatelessWidget {
                             icons[i],
                             size: 14,
                             color: isSelected
-                                ? (isDark ? Colors.black : AppThemeColors.textStrong)
+                                ? (isDark
+                                      ? Colors.black
+                                      : AppThemeColors.textStrong)
                                 : AppThemeColors.textSoft,
                           ),
                           const SizedBox(width: 6),
@@ -378,7 +383,9 @@ class _ThemeSegmentTile extends StatelessWidget {
                                   ? FontWeight.w600
                                   : FontWeight.w400,
                               color: isSelected
-                                  ? (isDark ? Colors.black : AppThemeColors.textStrong)
+                                  ? (isDark
+                                        ? Colors.black
+                                        : AppThemeColors.textStrong)
                                   : AppThemeColors.textSoft,
                             ),
                           ),
@@ -528,21 +535,24 @@ class _SettingsHeaderBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: AppThemeColors.card,
+    final button = Material(
+      color: AppThemeColors.card,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
         borderRadius: BorderRadius.circular(22),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-          onTap: onTap,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(icon, size: 20, color: AppThemeColors.textStrong),
-          ),
+        onTap: onTap,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(icon, size: 20, color: AppThemeColors.textStrong),
         ),
       ),
     );
+
+    if (tooltip.isEmpty) {
+      return button;
+    }
+
+    return Tooltip(message: tooltip, excludeFromSemantics: true, child: button);
   }
 }

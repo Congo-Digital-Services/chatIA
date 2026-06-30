@@ -253,14 +253,9 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
           AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             decoration: BoxDecoration(
-              color: isDark
-                  ? AppThemeColors.card
-                  : AppThemeColors.card,
+              color: isDark ? AppThemeColors.card : AppThemeColors.card,
               borderRadius: BorderRadius.circular(28),
-              border: Border.all(
-                color: AppThemeColors.stroke,
-                width: 1,
-              ),
+              border: Border.all(color: AppThemeColors.stroke, width: 1),
             ),
             child: _isRecording
                 ? Row(
@@ -414,26 +409,29 @@ class _ComposerIconBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: Colors.transparent,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onTap,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(
-              icon,
-              size: 22,
-              color: isDark ? Colors.white : Colors.black,
-            ),
+    final button = Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(
+            icon,
+            size: 22,
+            color: isDark ? Colors.white : Colors.black,
           ),
         ),
       ),
     );
+
+    if (tooltip.isEmpty) {
+      return button;
+    }
+
+    return Tooltip(message: tooltip, excludeFromSemantics: true, child: button);
   }
 }
 

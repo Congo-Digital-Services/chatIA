@@ -38,7 +38,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         'Connexion annulée ou impossible. Veuillez réessayer.';
     ref.read(authControllerProvider).setErrorMessage(error);
   }
-
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
@@ -72,78 +71,86 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     return Scaffold(
       backgroundColor: AppThemeColors.background,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final ctaSpacing = (constraints.maxHeight * 0.22).clamp(
+              32.0,
+              220.0,
+            );
+            return SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.max,
+                  children: [
+                    // ── Offset supérieur : ancre le contenu dans le tiers haut ──
+                    SizedBox(height: constraints.maxHeight * 0.09),
 
-              // ── Offset supérieur : ancre le contenu dans le tiers haut ──
-              const SizedBox(height: 60),
+                    // ── Logo officiel ─────────────────────────────────────────
+                    Image.asset(
+                      'assets/icons/congo_logo.png',
+                      height: 100,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(height: 100),
 
-              // ── Logo officiel ─────────────────────────────────────────
-              Image.asset(
-                'assets/icons/congo_logo.png',
-                height: 100,
-                fit: BoxFit.contain,
-              ),
-              const SizedBox(height: 100),
+                    // ── Titre ──────────────────────────────────────────────────
+                    Text(
+                      'ChatIA',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.displaySmall?.copyWith(
+                        color: AppThemeColors.textStrong,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Votre assistant IA sécurisé,\npowered by Congo Digital Services.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: AppThemeColors.textSoft,
+                        height: 1.5,
+                      ),
+                    ),
 
-              // ── Titre ──────────────────────────────────────────────────
-              Text(
-                'ChatIA',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.displaySmall?.copyWith(
-                  color: AppThemeColors.textStrong,
+                    // ── Espace fixe borné pour éviter un flex non borné dans le scroll ──
+                    SizedBox(height: ctaSpacing.toDouble()),
+
+                    // ── Bouton d'authentification ──────────────────────────────
+                    _KeycloakButton(
+                      isLoading: auth.isLoading,
+                      onTap: auth.isLoading
+                          ? null
+                          : () => ref
+                                .read(authControllerProvider)
+                                .signInWithSso(),
+                    ),
+                    if (auth.errorMessage != null) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        auth.errorMessage!,
+                        style: const TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+
+                    // ── Marge de sécurité en bas ───────────────────────────────
+                    const SizedBox(height: 32),
+                  ],
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Votre assistant IA sécurisé,\npowered by Congo Digital Services.',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  color: AppThemeColors.textSoft,
-                  height: 1.5,
-                ),
-              ),
-
-              // ── Espace flexible → pousse le bouton vers le bas ─────────
-              const Spacer(),
-
-              // ── Bouton d'authentification ──────────────────────────────
-              SizedBox(
-                width: double.infinity,
-                child: _KeycloakButton(
-                  isLoading: auth.isLoading,
-                  onTap: auth.isLoading
-                      ? null
-                      : () => ref.read(authControllerProvider).signInWithSso(),
-                ),
-              ),
-              if (auth.errorMessage != null) ...[
-                const SizedBox(height: 16),
-                Text(
-                  auth.errorMessage!,
-                  style: const TextStyle(
-                    color: Colors.redAccent,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-
-              // ── Marge de sécurité en bas ───────────────────────────────
-              const SizedBox(height: 40),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
   }
 }
-
-
 
 // ── Bouton Keycloak ─────────────────────────────────────────────────────────
 class _KeycloakButton extends StatelessWidget {

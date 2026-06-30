@@ -7,8 +7,6 @@ import '../../features/chat/providers/chat_state_provider.dart';
 import '../models/conversation.dart';
 import '../theme/app_theme.dart';
 
-
-
 class ConduitConversationDrawer extends ConsumerStatefulWidget {
   const ConduitConversationDrawer({super.key, required this.onSettingsTap});
 
@@ -21,7 +19,6 @@ class ConduitConversationDrawer extends ConsumerStatefulWidget {
 
 class _ConduitConversationDrawerState
     extends ConsumerState<ConduitConversationDrawer> {
-
   final Map<String, bool> _expandedFolders = {};
 
   @override
@@ -46,8 +43,6 @@ class _ConduitConversationDrawerState
           padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
           child: Column(
             children: [
-
-
               // ── Barre de recherche + Nouvelle conv ───────────────────────
               Row(
                 children: [
@@ -84,10 +79,9 @@ class _ConduitConversationDrawerState
                                 contentPadding: const EdgeInsets.symmetric(
                                   vertical: 0,
                                 ),
-                                hintStyle: theme.textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: AppThemeColors.textMuted,
-                                    ),
+                                hintStyle: theme.textTheme.bodySmall?.copyWith(
+                                  color: AppThemeColors.textMuted,
+                                ),
                                 isDense: true,
                               ),
                             ),
@@ -280,8 +274,6 @@ class _ChatsContent extends ConsumerWidget {
   }
 }
 
-
-
 // ─── En-tête de section ───────────────────────────────────────────────────────
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({required this.label, this.count});
@@ -468,8 +460,10 @@ class _ConversationTile extends ConsumerWidget {
                         color: isSelected
                             ? AppThemeColors.background
                             : (conversation.isPinned
-                                ? AppThemeColors.textStrong
-                                : AppThemeColors.textMuted.withValues(alpha: 0.5)),
+                                  ? AppThemeColors.textStrong
+                                  : AppThemeColors.textMuted.withValues(
+                                      alpha: 0.5,
+                                    )),
                       ),
                     ),
                   ),
@@ -519,21 +513,24 @@ class _DrawerIconBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: AppThemeColors.pill,
+    final button = Material(
+      color: AppThemeColors.pill,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(icon, size: 20, color: AppThemeColors.textStrong),
-          ),
+        onTap: onTap,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(icon, size: 20, color: AppThemeColors.textStrong),
         ),
       ),
     );
+
+    if (tooltip.isEmpty) {
+      return button;
+    }
+
+    return Tooltip(message: tooltip, excludeFromSemantics: true, child: button);
   }
 }
