@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants/backend_config.dart';
 import '../../../core/services/chatia_api_service.dart';
 import '../../../shared/models/chat_message.dart';
 import '../../../shared/models/conversation.dart';
@@ -17,8 +18,6 @@ class ChatController extends ChangeNotifier {
   ChatController(this._apiService) {
     _conversations = const [];
     _selectedConversation = _createDraftConversation();
-    _availableModels = const [ChatiaApiService.defaultLiteLlmModel];
-    _selectedModel = ChatiaApiService.defaultLiteLlmModel;
   }
 
   final ChatiaApiService _apiService;
@@ -26,16 +25,12 @@ class ChatController extends ChangeNotifier {
 
   late List<Conversation> _conversations;
   late Conversation _selectedConversation;
-  late List<String> _availableModels;
-  late String _selectedModel;
-  bool _hasLoadedModels = false;
   final Set<String> _loadedConversationIds = <String>{};
   final Set<String> _loadingConversationIds = <String>{};
   final Set<String> _loadingMoreConversationIds = <String>{};
   final Map<String, String?> _conversationNextCursors = <String, String?>{};
   final Map<String, String> _conversationErrors = <String, String>{};
   bool isLoading = false;
-  bool isLoadingModels = false;
   bool isStreaming = false;
   StreamSubscription<ChatStreamEvent>? _activeStreamSubscription;
   String searchQuery = '';
@@ -43,8 +38,6 @@ class ChatController extends ChangeNotifier {
 
   List<Conversation> get conversations => List.unmodifiable(_conversations);
   Conversation get selectedConversation => _selectedConversation;
-  List<String> get availableModels => List.unmodifiable(_availableModels);
-  String get selectedModel => _selectedModel;
   bool get isSelectedConversationLoading =>
       _loadingConversationIds.contains(_selectedConversation.id);
   bool get isSelectedConversationLoadingMore =>
@@ -79,6 +72,20 @@ class ChatController extends ChangeNotifier {
       .where((conversation) => conversation.type == ConversationType.channel)
       .toList();
 
+  void resetForFreshStart() {
+    _loadedConversationIds.clear();
+    _loadingConversationIds.clear();
+    _loadingMoreConversationIds.clear();
+    _conversationNextCursors.clear();
+    _conversationErrors.clear();
+    isLoading = false;
+    isStreaming = false;
+    errorMessage = null;
+    searchQuery = '';
+    _selectedConversation = _createDraftConversation();
+    notifyListeners();
+  }
+
   Future<void> loadConversations() async {
     if (!_apiService.isAvailable) {
       return;
@@ -87,16 +94,27 @@ class ChatController extends ChangeNotifier {
     try {
       isLoading = true;
       errorMessage = null;
+      _loadedConversationIds.clear();
+      _loadingConversationIds.clear();
+      _loadingMoreConversationIds.clear();
+      _conversationNextCursors.clear();
+      _conversationErrors.clear();
       notifyListeners();
 
-      await loadModels();
+      final results = (await _apiService.fetchConversations())
+          .where(
+            (conversation) =>
+                conversation.type == ConversationType.chat &&
+                conversation.id.trim().isNotEmpty,
+          )
+          .toList();
+      final visibleResults = await _filterEmptyBackendConversations(results);
 
-      final results = await _apiService.fetchConversations();
-      if (results.isNotEmpty) {
-        _conversations = results;
-        _selectedConversation = results.first;
-        notifyListeners();
-        await selectConversation(results.first, forceReload: true);
+      if (visibleResults.isNotEmpty) {
+        _conversations = visibleResults;
+        if (_selectedConversation.id != _draftConversationId) {
+          _selectedConversation = _createDraftConversation();
+        }
       } else {
         _conversations = const [];
         _selectedConversation = _createDraftConversation();
@@ -107,52 +125,6 @@ class ChatController extends ChangeNotifier {
       isLoading = false;
       notifyListeners();
     }
-  }
-
-  Future<void> loadModels({bool force = false}) async {
-    if (!_apiService.isAvailable) {
-      return;
-    }
-    if (isLoadingModels) {
-      return;
-    }
-    if (!force && _hasLoadedModels) {
-      return;
-    }
-
-    try {
-      isLoadingModels = true;
-      notifyListeners();
-
-      final models = await _apiService.fetchModels();
-      final normalized = models.isEmpty
-          ? const [ChatiaApiService.defaultLiteLlmModel]
-          : models;
-      _availableModels = normalized;
-      _hasLoadedModels = true;
-      if (!_availableModels.contains(_selectedModel)) {
-        _selectedModel = _availableModels.first;
-      }
-    } catch (error) {
-      errorMessage = error.toString();
-      _availableModels = const [ChatiaApiService.defaultLiteLlmModel];
-      _selectedModel = _availableModels.first;
-    } finally {
-      isLoadingModels = false;
-      notifyListeners();
-    }
-  }
-
-  void selectModel(String model) {
-    final normalized = model.trim();
-    if (normalized.isEmpty || normalized == _selectedModel) {
-      return;
-    }
-    _selectedModel = normalized;
-    if (!_availableModels.contains(normalized)) {
-      _availableModels = [normalized, ..._availableModels];
-    }
-    notifyListeners();
   }
 
   Future<void> selectConversation(
@@ -372,10 +344,135 @@ class ChatController extends ChangeNotifier {
       id: _draftConversationId,
       title: 'Nouvelle conversation',
       subtitle: 'Commence un échange',
-      folder: 'Brouillons',
+      folder: 'Chats',
       isPinned: false,
       messages: const [],
     );
+  }
+
+  Future<List<Conversation>> _filterEmptyBackendConversations(
+    List<Conversation> conversations,
+  ) async {
+    final visible = <Conversation>[];
+
+    for (final conversation in conversations) {
+      if (!_looksLikeUntitledBackendConversation(conversation)) {
+        visible.add(conversation);
+        continue;
+      }
+
+      try {
+        final page = await _apiService.fetchMessages(
+          conversation.id,
+          pageSize: 6,
+        );
+        if (page.messages.isNotEmpty) {
+          final derivedTitle = _deriveConversationTitleFromMessages(
+            page.messages,
+          );
+          final derivedSubtitle = _deriveConversationSubtitleFromMessages(
+            page.messages,
+            title: derivedTitle,
+          );
+          visible.add(
+            conversation.copyWith(
+              title: derivedTitle ?? conversation.title,
+              subtitle: derivedSubtitle ?? conversation.subtitle,
+              messages: page.messages,
+            ),
+          );
+        }
+      } catch (_) {
+        // En cas d'échec de vérification, on conserve la conversation
+        // pour éviter de masquer un historique réel.
+        visible.add(conversation);
+      }
+    }
+
+    return visible;
+  }
+
+  bool _looksLikeUntitledBackendConversation(Conversation conversation) {
+    return conversation.title.trim().toLowerCase().startsWith('new chat');
+  }
+
+  String? _deriveConversationTitleFromMessages(List<ChatMessage> messages) {
+    for (final role in [ChatRole.user, ChatRole.assistant]) {
+      for (final message in messages.where((item) => item.role == role)) {
+        final title = _deriveConversationTitle(message.text);
+        if (title != null) {
+          return title;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  String? _deriveConversationSubtitleFromMessages(
+    List<ChatMessage> messages, {
+    String? title,
+  }) {
+    for (final message in messages) {
+      final preview = _normalizePreviewText(message.text);
+      if (preview == null) {
+        continue;
+      }
+      if (title != null && preview == title) {
+        continue;
+      }
+      return preview;
+    }
+
+    return null;
+  }
+
+  String? _deriveConversationTitle(String rawText) {
+    final text = _normalizePreviewText(rawText);
+    if (text == null || text.isEmpty) {
+      return null;
+    }
+
+    if (_isGreetingLike(text)) {
+      return null;
+    }
+
+    if (text.length < 8) {
+      return null;
+    }
+
+    if (text.length <= 48) {
+      return text;
+    }
+
+    return '${text.substring(0, 48).trimRight()}...';
+  }
+
+  String? _normalizePreviewText(String rawText) {
+    final text = rawText.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (text.isEmpty) {
+      return null;
+    }
+    return text;
+  }
+
+  bool _isGreetingLike(String text) {
+    final normalized = text
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-zàâçéèêëîïôûùüÿñæœ0-9\s]'), '')
+        .trim();
+    const greetings = {
+      'bonjour',
+      'bonsoir',
+      'salut',
+      'hello',
+      'hi',
+      'cc',
+      'coucou',
+      'yo',
+      'bjr',
+    };
+    return greetings.contains(normalized);
   }
 
   void createNote() {
@@ -436,8 +533,9 @@ class ChatController extends ChangeNotifier {
 
     await _consumeChatStream(
       assistantId: assistantId,
-      stream: _apiService.sendLiteLlmChat(
-        model: _selectedModel,
+      stream: _apiService.sendAgentChat(
+        agentId: BackendConfig.chatAgentId,
+        spec: BackendConfig.chatSpec,
         conversationId: conversationId,
         parentMessageId: parentMessageId,
         messageId: userMessage.id,
@@ -602,13 +700,13 @@ class ChatController extends ChangeNotifier {
               tempFileId: tempFileId,
               width: width,
               height: height,
-              endpoint: ChatiaApiService.liteLlmEndpoint,
+              endpoint: ChatiaApiService.agentsEndpoint,
             )
           : await _apiService.uploadMessageFile(
               bytes: bytes,
               filename: filename,
               tempFileId: tempFileId,
-              endpoint: ChatiaApiService.liteLlmEndpoint,
+              endpoint: ChatiaApiService.agentsEndpoint,
             );
 
       // Mettre à jour le message local avec l'URL backend
@@ -645,12 +743,13 @@ class ChatController extends ChangeNotifier {
 
       await _consumeChatStream(
         assistantId: assistantId,
-        stream: _apiService.sendLiteLlmChat(
+        stream: _apiService.sendAgentChat(
+          agentId: BackendConfig.chatAgentId,
+          spec: BackendConfig.chatSpec,
           conversationId: conversationId,
           parentMessageId: parentMessageId,
           messageId: chatMessageId,
           text: promptText,
-          model: _selectedModel,
           files: [filePayload],
         ),
         errorPrefix: 'Erreur analyse image',
@@ -712,16 +811,18 @@ class ChatController extends ChangeNotifier {
   }
 
   void _appendMessages(ChatMessage userMessage, ChatMessage assistantMessage) {
+    final nextMessages = [
+      ..._selectedConversation.messages,
+      userMessage,
+      assistantMessage,
+    ];
+    final derivedTitle = _deriveConversationTitleFromMessages(nextMessages);
     final updated = _selectedConversation.copyWith(
       title: _selectedConversation.title == 'Nouvelle conversation'
-          ? userMessage.text
+          ? (derivedTitle ?? _selectedConversation.title)
           : _selectedConversation.title,
       subtitle: userMessage.text,
-      messages: [
-        ..._selectedConversation.messages,
-        userMessage,
-        assistantMessage,
-      ],
+      messages: nextMessages,
     );
 
     final index = _conversations.indexWhere(
@@ -938,23 +1039,40 @@ class ChatController extends ChangeNotifier {
       final details = reset
           ? await _apiService.fetchConversation(conversationId)
           : _conversationById(conversationId);
-      final page = await _apiService.fetchMessages(
-        conversationId,
-        cursor: cursor,
-      );
+      PaginatedMessagesResponse? page;
+      try {
+        page = await _apiService.fetchMessages(conversationId, cursor: cursor);
+      } catch (error) {
+        if (!reset || details.messages.isEmpty) {
+          rethrow;
+        }
+      }
       final previous = _conversationById(conversationId);
+      final resolvedTitle =
+          _looksLikeUntitledBackendConversation(details) &&
+              !_looksLikeUntitledBackendConversation(previous)
+          ? previous.title
+          : details.title;
+      final resolvedSubtitle =
+          details.subtitle.trim().isEmpty && previous.subtitle.trim().isNotEmpty
+          ? previous.subtitle
+          : details.subtitle;
       final mergedMessages = reset
-          ? page.messages
+          ? (page?.messages.isNotEmpty == true ? page!.messages : details.messages)
           : <ChatMessage>[
               ...previous.messages,
-              ...page.messages.where(
+              ...(page?.messages ?? const <ChatMessage>[]).where(
                 (message) => !previous.messages.any((m) => m.id == message.id),
               ),
             ];
-      final updated = details.copyWith(messages: mergedMessages);
+      final updated = details.copyWith(
+        title: resolvedTitle,
+        subtitle: resolvedSubtitle,
+        messages: mergedMessages,
+      );
 
       _replaceConversation(updated);
-      _conversationNextCursors[conversationId] = page.nextCursor;
+      _conversationNextCursors[conversationId] = page?.nextCursor;
       _loadedConversationIds.add(conversationId);
       _conversationErrors.remove(conversationId);
       if (_selectedConversation.id == conversationId) {

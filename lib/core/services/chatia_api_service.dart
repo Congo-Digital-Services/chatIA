@@ -26,8 +26,7 @@ final chatiaConfigProvider = FutureProvider<Map<String, dynamic>>((ref) {
 class ChatiaApiService {
   ChatiaApiService({required this.baseUrl, required this.sessionService});
 
-  static const liteLlmEndpoint = 'LiteLLM';
-  static const defaultLiteLlmModel = 'gemini/gemini-2.5-flash';
+  static const agentsEndpoint = 'agents';
 
   final String baseUrl;
   final LibreChatSessionService sessionService;
@@ -203,63 +202,18 @@ class ChatiaApiService {
     }
 
     final jsonBody = jsonDecode(response.body);
-    if (jsonBody is! Map<String, dynamic>) {
+    final payload = jsonBody is Map<String, dynamic>
+        ? (jsonBody['conversation'] is Map<String, dynamic>
+              ? Map<String, dynamic>.from(
+                  jsonBody['conversation'] as Map<String, dynamic>,
+                )
+              : jsonBody)
+        : null;
+    if (payload == null) {
       throw Exception('Réponse conversation inattendue.');
     }
 
-    return _mapApiConversation(jsonBody);
-  }
-
-  Future<List<String>> fetchModels() async {
-    final response = await _sendJson('GET', '/api/models');
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Impossible de charger les modèles : ${response.statusCode}',
-      );
-    }
-
-    final jsonBody = jsonDecode(response.body);
-    final models = <String>[];
-
-    void collect(dynamic value) {
-      if (value is String) {
-        final model = value.trim();
-        if (model.isNotEmpty) {
-          models.add(model);
-        }
-        return;
-      }
-
-      if (value is List) {
-        for (final item in value) {
-          collect(item);
-        }
-        return;
-      }
-
-      if (value is Map<String, dynamic>) {
-        if (value.containsKey(liteLlmEndpoint)) {
-          collect(value[liteLlmEndpoint]);
-          return;
-        }
-
-        if (value.containsKey('models')) {
-          collect(value['models']);
-          return;
-        }
-
-        final directModel =
-            value['name']?.toString() ??
-            value['id']?.toString() ??
-            value['model']?.toString();
-        if (directModel != null && directModel.trim().isNotEmpty) {
-          models.add(directModel.trim());
-        }
-      }
-    }
-
-    collect(jsonBody);
-    return models.toSet().toList();
+    return _mapApiConversation(payload);
   }
 
   Future<PaginatedMessagesResponse> fetchMessages(
@@ -285,10 +239,7 @@ class ChatiaApiService {
     }
 
     final jsonBody = jsonDecode(response.body);
-    // Route recommandée : {messages: [...]} ; fallback sur tableau direct.
-    final items = jsonBody is Map<String, dynamic>
-        ? (jsonBody['messages'] as List<dynamic>?) ?? []
-        : (jsonBody as List<dynamic>);
+    final items = _extractMessagesList(jsonBody);
     final nextCursor = jsonBody is Map<String, dynamic>
         ? jsonBody['nextCursor']?.toString()
         : null;
@@ -407,84 +358,52 @@ class ChatiaApiService {
     }
   }
 
-  Future<OpenAIChatResponse> startLiteLlmChat({
-    required String parentMessageId,
-    required String messageId,
-    required String text,
-    String? conversationId,
-    String model = defaultLiteLlmModel,
-    List<Map<String, dynamic>>? files,
-  }) async {
-    _logAuthDebug('POST /api/agents/chat/$liteLlmEndpoint');
-    _logRequestDebug(
-      'POST /api/agents/chat/$liteLlmEndpoint',
-      _uri('/api/agents/chat/$liteLlmEndpoint'),
-    );
-    final bodyMap = <String, dynamic>{
-      'text': text,
-      'sender': 'User',
-      'clientTimestamp': DateTime.now().toIso8601String(),
-      'isCreatedByUser': true,
-      'parentMessageId': parentMessageId,
-      'messageId': messageId,
-      'error': false,
-      'endpoint': liteLlmEndpoint,
-      'endpointType': 'custom',
-      'model': model,
-      'key': 'never',
-      'isTemporary': false,
-      'isRegenerate': false,
-      'isContinued': false,
-      if (conversationId != null && conversationId.isNotEmpty)
-        'conversationId': conversationId,
-    };
-    if (files != null && files.isNotEmpty) {
-      bodyMap['files'] = files;
-    }
-    final body = jsonEncode(bodyMap);
-    _logFullDebug('POST /api/agents/chat/$liteLlmEndpoint body', body);
-
-    final response = await _sendJson(
-      'POST',
-      '/api/agents/chat/$liteLlmEndpoint',
-      body: body,
-    );
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Échec démarrage $liteLlmEndpoint: ${response.statusCode} ${response.body}',
-      );
-    }
-
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
-    return OpenAIChatResponse(
-      streamId: data['streamId']?.toString() ?? '',
-      conversationId: data['conversationId']?.toString(),
-    );
-  }
-
-  /// POST /api/agents/chat
-  /// Démarre une conversation avec un agent LibreChat spécifique.
-  /// Nécessite un [agentId] valide configuré sur l'instance LibreChat.
-  /// Retourne un [OpenAIChatResponse] avec le streamId pour le flux SSE.
   Future<OpenAIChatResponse> startAgentChat({
     required String agentId,
     required String parentMessageId,
     required String messageId,
     required String text,
     String? conversationId,
+    List<Map<String, dynamic>>? files,
+    String spec = 'assistant-global',
   }) async {
-    _logAuthDebug('POST /api/agents/chat');
-    _logRequestDebug('POST /api/agents/chat', _uri('/api/agents/chat'));
+    _logAuthDebug('POST /api/agents/chat/$agentsEndpoint');
+    _logRequestDebug(
+      'POST /api/agents/chat/$agentsEndpoint',
+      _uri('/api/agents/chat/$agentsEndpoint'),
+    );
     final body = jsonEncode({
-      'agent_id': agentId,
-      'conversationId': conversationId,
-      'parentMessageId': parentMessageId,
-      'messageId': messageId,
       'text': text,
+      'sender': 'User',
+      'clientTimestamp': DateTime.now().toIso8601String(),
+      'isCreatedByUser': true,
+      'parentMessageId': parentMessageId,
+      'conversationId': conversationId,
+      'messageId': messageId,
+      'error': false,
+      'endpoint': agentsEndpoint,
+      'spec': spec,
+      'agent_id': agentId,
+      'key': DateTime.now().toUtc().toIso8601String(),
+      'isTemporary': false,
+      'isRegenerate': false,
+      'isContinued': false,
+      'ephemeralAgent': {
+        'mcp': const [],
+        'web_search': false,
+        'file_search': false,
+        'execute_code': false,
+        'artifacts': '',
+      },
+      if (files != null && files.isNotEmpty) 'files': files,
     });
-    _logFullDebug('POST /api/agents/chat body', body);
+    _logFullDebug('POST /api/agents/chat/$agentsEndpoint body', body);
 
-    final response = await _sendJson('POST', '/api/agents/chat', body: body);
+    final response = await _sendJson(
+      'POST',
+      '/api/agents/chat/$agentsEndpoint',
+      body: body,
+    );
     if (response.statusCode != 200) {
       throw Exception(
         'Échec démarrage chat agent ($agentId): ${response.statusCode} ${response.body}',
@@ -506,6 +425,8 @@ class ChatiaApiService {
     required String text,
     String? conversationId,
     bool resume = false,
+    List<Map<String, dynamic>>? files,
+    String spec = 'assistant-global',
   }) async* {
     final startResponse = await startAgentChat(
       agentId: agentId,
@@ -513,6 +434,8 @@ class ChatiaApiService {
       parentMessageId: parentMessageId,
       messageId: messageId,
       text: text,
+      files: files,
+      spec: spec,
     );
 
     final streamId = startResponse.streamId;
@@ -535,7 +458,7 @@ class ChatiaApiService {
     required String tempFileId,
     required int width,
     required int height,
-    String endpoint = liteLlmEndpoint,
+    String endpoint = agentsEndpoint,
   }) async {
     if (width <= 0 || height <= 0) {
       throw Exception('Dimensions image manquantes pour le backend ChatIA.');
@@ -561,7 +484,7 @@ class ChatiaApiService {
     required List<int> bytes,
     required String filename,
     required String tempFileId,
-    String endpoint = liteLlmEndpoint,
+    String endpoint = agentsEndpoint,
   }) async {
     final data = await _sendMultipartJson(
       path: '/api/files',
@@ -630,38 +553,6 @@ class ChatiaApiService {
     }
 
     return decoded;
-  }
-
-  Stream<ChatStreamEvent> sendLiteLlmChat({
-    required String parentMessageId,
-    required String messageId,
-    required String text,
-    String? conversationId,
-    String model = defaultLiteLlmModel,
-    bool resume = false,
-    List<Map<String, dynamic>>? files,
-  }) async* {
-    final startResponse = await startLiteLlmChat(
-      conversationId: conversationId,
-      parentMessageId: parentMessageId,
-      messageId: messageId,
-      text: text,
-      model: model,
-      files: files,
-    );
-
-    final streamId = startResponse.streamId;
-    if (streamId.isEmpty) {
-      throw Exception('StreamId manquant depuis le backend.');
-    }
-
-    await for (final event in streamChat(
-      streamId,
-      resume: resume,
-      fallbackConversationId: startResponse.conversationId,
-    )) {
-      yield event;
-    }
   }
 
   Stream<ChatStreamEvent> streamChat(
@@ -1039,6 +930,15 @@ class ChatiaApiService {
     return _extractTextFromContent(value);
   }
 
+  String _firstNonEmptyString(List<String?> values) {
+    for (final value in values) {
+      if (value != null && value.isNotEmpty) {
+        return value;
+      }
+    }
+    return '';
+  }
+
   String _extractTextFromContent(Object? content) {
     if (content is String) {
       return content;
@@ -1127,15 +1027,34 @@ class ChatiaApiService {
   }
 
   ChatMessage _mapApiMessage(Map<String, dynamic> json) {
+    final nestedMessage = _asMap(json['message']);
+    final responseMessage = _asMap(json['responseMessage']);
     final id =
         json['id']?.toString() ??
+        nestedMessage?['id']?.toString() ??
+        responseMessage?['id']?.toString() ??
         json['messageId']?.toString() ??
         DateTime.now().microsecondsSinceEpoch.toString();
     final sender =
         json['sender']?.toString().toLowerCase() ??
+        nestedMessage?['sender']?.toString().toLowerCase() ??
+        responseMessage?['sender']?.toString().toLowerCase() ??
         json['role']?.toString().toLowerCase() ??
+        nestedMessage?['role']?.toString().toLowerCase() ??
+        responseMessage?['role']?.toString().toLowerCase() ??
+        ((json['isCreatedByUser'] == true ||
+                nestedMessage?['isCreatedByUser'] == true)
+            ? 'user'
+            : null) ??
         'assistant';
-    final text = json['text']?.toString() ?? json['content']?.toString() ?? '';
+    final text = _firstNonEmptyString([
+      json['text']?.toString(),
+      nestedMessage?['text']?.toString(),
+      responseMessage?['text']?.toString(),
+      _extractStringOrContent(json['content']),
+      _extractStringOrContent(nestedMessage?['content']),
+      _extractStringOrContent(responseMessage?['content']),
+    ]);
     final file = _firstFile(json);
     final fileType = file?['type']?.toString() ?? file?['mimeType']?.toString();
 
@@ -1177,6 +1096,45 @@ class ChatiaApiService {
     final uri = Uri.tryParse(pathOrUrl);
     if (uri != null && uri.hasScheme) return pathOrUrl;
     return Uri.parse(baseUrl).resolve(pathOrUrl).toString();
+  }
+
+  List<dynamic> _extractMessagesList(dynamic jsonBody) {
+    if (jsonBody is List<dynamic>) {
+      return jsonBody;
+    }
+
+    if (jsonBody is! Map<String, dynamic>) {
+      return const [];
+    }
+
+    final directMessages = jsonBody['messages'];
+    if (directMessages is List<dynamic>) {
+      return directMessages;
+    }
+
+    final history = jsonBody['history'];
+    if (history is List<dynamic>) {
+      return history;
+    }
+
+    final conversation = _asMap(jsonBody['conversation']);
+    final nestedMessages = conversation?['messages'];
+    if (nestedMessages is List<dynamic>) {
+      return nestedMessages;
+    }
+
+    final data = jsonBody['data'];
+    if (data is List<dynamic>) {
+      return data;
+    }
+    if (data is Map<String, dynamic>) {
+      final dataMessages = data['messages'];
+      if (dataMessages is List<dynamic>) {
+        return dataMessages;
+      }
+    }
+
+    return const [];
   }
 }
 

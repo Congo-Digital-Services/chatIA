@@ -10,7 +10,7 @@ import 'package:http/http.dart' as http;
 
 void main() {
   test(
-    'loadConversations opens first conversation and loads messages from /api/messages',
+    'loadConversations keeps a fresh draft selected while loading history',
     () async {
       final service = _FakeChatiaApiService(
         conversations: [
@@ -37,13 +37,14 @@ void main() {
 
       await controller.loadConversations();
 
-      expect(controller.selectedConversation.id, 'convo-1');
-      expect(controller.selectedConversation.messages, hasLength(2));
-      expect(controller.selectedConversation.title, 'Conversation 1 detail');
-      expect(controller.hasLoadedSelectedConversation, isTrue);
-      expect(controller.selectedConversationHasMoreMessages, isTrue);
-      expect(service.fetchConversationCalls, ['convo-1']);
-      expect(service.fetchMessagesCalls.single, ('convo-1', null));
+      expect(controller.selectedConversation.id, '__draft__');
+      expect(controller.selectedConversation.messages, isEmpty);
+      expect(controller.conversations.map((conversation) => conversation.id), [
+        'convo-1',
+        'convo-2',
+      ]);
+      expect(service.fetchConversationCalls, isEmpty);
+      expect(service.fetchMessagesCalls, isEmpty);
     },
   );
 
@@ -72,15 +73,15 @@ void main() {
         ],
       },
     );
-    final controller = ChatController(service);
+      final controller = ChatController(service);
 
-    await controller.loadConversations();
-    await controller.selectConversation(controller.conversations[1]);
+      await controller.loadConversations();
+      await controller.selectConversation(controller.conversations[1]);
 
-    expect(controller.selectedConversation.id, 'convo-2');
-    expect(controller.selectedConversation.messages.single.text, 'Reponse 2');
-    expect(service.fetchConversationCalls, ['convo-1', 'convo-2']);
-    expect(service.fetchMessagesCalls, [('convo-1', null), ('convo-2', null)]);
+      expect(controller.selectedConversation.id, 'convo-2');
+      expect(controller.selectedConversation.messages.single.text, 'Reponse 2');
+      expect(service.fetchConversationCalls, ['convo-2']);
+      expect(service.fetchMessagesCalls, [('convo-2', null)]);
   });
 
   test(
@@ -107,6 +108,7 @@ void main() {
       final controller = ChatController(service);
 
       await controller.loadConversations();
+      await controller.selectConversation(controller.conversations.first);
       await controller.loadMoreSelectedConversationMessages();
       await controller.loadMoreSelectedConversationMessages();
 
@@ -136,6 +138,7 @@ void main() {
       final controller = ChatController(service);
 
       await controller.loadConversations();
+      await controller.selectConversation(controller.conversations.first);
 
       expect(controller.selectedConversation.id, 'convo-404');
       expect(controller.selectedConversation.messages, isEmpty);
@@ -144,6 +147,63 @@ void main() {
         contains('404 not found'),
       );
       expect(controller.hasLoadedSelectedConversation, isFalse);
+    },
+  );
+
+  test(
+    'loadConversations hides empty backend placeholders but keeps real history',
+    () async {
+      final service = _FakeChatiaApiService(
+        conversations: [
+          _conversation('empty-new-chat', title: 'New Chat'),
+          _conversation('filled-new-chat', title: 'New Chat'),
+          _conversation('named-chat', title: 'Projet API'),
+        ],
+        conversationDetails: {
+          'filled-new-chat': _conversation(
+            'filled-new-chat',
+            title: 'New Chat detail',
+          ),
+          'named-chat': _conversation('named-chat', title: 'Projet API detail'),
+        },
+        messagePages: {
+          'filled-new-chat': [
+            const PaginatedMessagesResponse(
+              messages: [
+                ChatMessage.user(id: 'm1', text: 'Bonjour'),
+                ChatMessage.user(
+                  id: 'm2',
+                  text: 'Configurer la connexion a l API LibreChat',
+                ),
+              ],
+              nextCursor: null,
+            ),
+          ],
+          'named-chat': [
+            const PaginatedMessagesResponse(
+              messages: [ChatMessage.assistant(id: 'm2', text: 'Salut')],
+              nextCursor: null,
+            ),
+          ],
+        },
+      );
+      final controller = ChatController(service);
+
+      await controller.loadConversations();
+
+      expect(
+        controller.conversations.map((conversation) => conversation.id),
+        ['filled-new-chat', 'named-chat'],
+      );
+      expect(
+        controller.conversations.first.title,
+        'Configurer la connexion a l API LibreChat',
+      );
+      expect(controller.selectedConversation.id, '__draft__');
+      expect(service.fetchMessagesCalls, [
+        ('empty-new-chat', null),
+        ('filled-new-chat', null),
+      ]);
     },
   );
 }

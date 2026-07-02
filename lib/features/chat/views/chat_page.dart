@@ -26,18 +26,38 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   bool _isVoiceCallActive = false;
   String? _lastConversationId;
   int _lastMessageCount = 0;
+  ProviderSubscription<AuthController>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_handleScroll);
+    _authSubscription = ref.listenManual<AuthController>(
+      authControllerProvider,
+      (previous, next) {
+        final previousToken = previous?.session?.accessToken;
+        final nextToken = next.session?.accessToken;
+        final chatController = ref.read(chatControllerProvider);
+        if (nextToken == null || nextToken.isEmpty) {
+          chatController.resetForFreshStart();
+          return;
+        }
+        if (nextToken.isNotEmpty && previousToken != nextToken) {
+          chatController.resetForFreshStart();
+          chatController.loadConversations();
+        }
+      },
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(chatControllerProvider).loadConversations();
+      final chatController = ref.read(chatControllerProvider);
+      chatController.resetForFreshStart();
+      chatController.loadConversations();
     });
   }
 
   @override
   void dispose() {
+    _authSubscription?.close();
     _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     super.dispose();
@@ -134,19 +154,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     ],
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-                  child: _ModelPicker(
-                    selectedModel: chat.selectedModel,
-                    availableModels: chat.availableModels,
-                    isLoading: chat.isLoadingModels,
-                    onRefresh: () => ref
-                        .read(chatControllerProvider)
-                        .loadModels(force: true),
-                    onSelected: (model) =>
-                        ref.read(chatControllerProvider).selectModel(model),
-                  ),
-                ),
                 // ── Corps ────────────────────────────────────────────────────────
                 Expanded(
                   child: isNote
@@ -179,360 +186,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     _isVoiceCallActive = false;
                   });
                 },
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ModelPicker extends StatelessWidget {
-  const _ModelPicker({
-    required this.selectedModel,
-    required this.availableModels,
-    required this.isLoading,
-    required this.onRefresh,
-    required this.onSelected,
-  });
-
-  final String selectedModel;
-  final List<String> availableModels;
-  final bool isLoading;
-  final VoidCallback onRefresh;
-  final ValueChanged<String> onSelected;
-
-  String _providerLabel(String model) {
-    final slashIndex = model.indexOf('/');
-    if (slashIndex <= 0) {
-      return 'LiteLLM';
-    }
-    return model.substring(0, slashIndex);
-  }
-
-  String _displayLabel(String model) {
-    final slashIndex = model.indexOf('/');
-    if (slashIndex <= 0 || slashIndex >= model.length - 1) {
-      return model;
-    }
-    return model.substring(slashIndex + 1);
-  }
-
-  Future<void> _openModelSheet(BuildContext context) async {
-    if (availableModels.isEmpty) {
-      return;
-    }
-
-    final theme = Theme.of(context);
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) {
-        return SafeArea(
-          top: false,
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-            decoration: BoxDecoration(
-              color: AppThemeColors.background,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(28),
-              ),
-              border: Border.all(color: AppThemeColors.stroke),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppThemeColors.stroke,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Text(
-                      'Choisir un modèle',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppThemeColors.pill,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        '${availableModels.length} disponibles',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: AppThemeColors.textSoft,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: availableModels.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      final model = availableModels[index];
-                      final isActive = model == selectedModel;
-                      return Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(18),
-                          onTap: () => Navigator.of(context).pop(model),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 140),
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: isActive
-                                  ? AppThemeColors.textStrong
-                                  : AppThemeColors.card,
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
-                                color: isActive
-                                    ? AppThemeColors.textStrong
-                                    : AppThemeColors.stroke,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 7,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isActive
-                                        ? (theme.brightness == Brightness.dark
-                                              ? Colors.black
-                                              : Colors.white)
-                                        : AppThemeColors.pill,
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    _providerLabel(model),
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: isActive
-                                          ? AppThemeColors.textStrong
-                                          : AppThemeColors.textSoft,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        _displayLabel(model),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: theme.textTheme.bodyLarge
-                                            ?.copyWith(
-                                              color: isActive
-                                                  ? (theme.brightness ==
-                                                            Brightness.dark
-                                                        ? Colors.black
-                                                        : Colors.white)
-                                                  : AppThemeColors.textStrong,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        model,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                              color: isActive
-                                                  ? (theme.brightness ==
-                                                            Brightness.dark
-                                                        ? Colors.black54
-                                                        : Colors.white70)
-                                                  : AppThemeColors.textSoft,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Icon(
-                                  isActive
-                                      ? CupertinoIcons.check_mark_circled_solid
-                                      : CupertinoIcons.chevron_right,
-                                  size: 20,
-                                  color: isActive
-                                      ? (theme.brightness == Brightness.dark
-                                            ? Colors.black
-                                            : Colors.white)
-                                      : AppThemeColors.textMuted,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    if (selected != null && selected != selectedModel) {
-      onSelected(selected);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final provider = _providerLabel(selectedModel);
-    final displayModel = _displayLabel(selectedModel);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-      decoration: BoxDecoration(
-        color: AppThemeColors.card,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppThemeColors.stroke),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(18),
-                onTap: isLoading ? null : () => _openModelSheet(context),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 42,
-                        height: 42,
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? AppThemeColors.pillSelected
-                              : AppThemeColors.pill,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Icon(
-                          CupertinoIcons.sparkles,
-                          size: 18,
-                          color: isDark
-                              ? Colors.black
-                              : AppThemeColors.textStrong,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppThemeColors.pill,
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    provider,
-                                    style: theme.textTheme.labelLarge?.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                      color: AppThemeColors.textSoft,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Modèle actif',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: AppThemeColors.textMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              displayModel,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Icon(
-                        CupertinoIcons.chevron_up_chevron_down,
-                        size: 16,
-                        color: AppThemeColors.textMuted,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          if (isLoading)
-            const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          else
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: onRefresh,
-                child: Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: AppThemeColors.pill,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(
-                    CupertinoIcons.refresh,
-                    size: 18,
-                    color: AppThemeColors.textSoft,
-                  ),
-                ),
               ),
             ),
         ],
