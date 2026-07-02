@@ -930,6 +930,15 @@ class ChatiaApiService {
     return _extractTextFromContent(value);
   }
 
+  String _firstNonEmptyString(List<String?> values) {
+    for (final value in values) {
+      if (value != null && value.isNotEmpty) {
+        return value;
+      }
+    }
+    return '';
+  }
+
   String _extractTextFromContent(Object? content) {
     if (content is String) {
       return content;
@@ -1018,15 +1027,34 @@ class ChatiaApiService {
   }
 
   ChatMessage _mapApiMessage(Map<String, dynamic> json) {
+    final nestedMessage = _asMap(json['message']);
+    final responseMessage = _asMap(json['responseMessage']);
     final id =
         json['id']?.toString() ??
+        nestedMessage?['id']?.toString() ??
+        responseMessage?['id']?.toString() ??
         json['messageId']?.toString() ??
         DateTime.now().microsecondsSinceEpoch.toString();
     final sender =
         json['sender']?.toString().toLowerCase() ??
+        nestedMessage?['sender']?.toString().toLowerCase() ??
+        responseMessage?['sender']?.toString().toLowerCase() ??
         json['role']?.toString().toLowerCase() ??
+        nestedMessage?['role']?.toString().toLowerCase() ??
+        responseMessage?['role']?.toString().toLowerCase() ??
+        ((json['isCreatedByUser'] == true ||
+                nestedMessage?['isCreatedByUser'] == true)
+            ? 'user'
+            : null) ??
         'assistant';
-    final text = json['text']?.toString() ?? json['content']?.toString() ?? '';
+    final text = _firstNonEmptyString([
+      json['text']?.toString(),
+      nestedMessage?['text']?.toString(),
+      responseMessage?['text']?.toString(),
+      _extractStringOrContent(json['content']),
+      _extractStringOrContent(nestedMessage?['content']),
+      _extractStringOrContent(responseMessage?['content']),
+    ]);
     final file = _firstFile(json);
     final fileType = file?['type']?.toString() ?? file?['mimeType']?.toString();
 

@@ -26,18 +26,38 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   bool _isVoiceCallActive = false;
   String? _lastConversationId;
   int _lastMessageCount = 0;
+  ProviderSubscription<AuthController>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_handleScroll);
+    _authSubscription = ref.listenManual<AuthController>(
+      authControllerProvider,
+      (previous, next) {
+        final previousToken = previous?.session?.accessToken;
+        final nextToken = next.session?.accessToken;
+        final chatController = ref.read(chatControllerProvider);
+        if (nextToken == null || nextToken.isEmpty) {
+          chatController.resetForFreshStart();
+          return;
+        }
+        if (nextToken.isNotEmpty && previousToken != nextToken) {
+          chatController.resetForFreshStart();
+          chatController.loadConversations();
+        }
+      },
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(chatControllerProvider).loadConversations();
+      final chatController = ref.read(chatControllerProvider);
+      chatController.resetForFreshStart();
+      chatController.loadConversations();
     });
   }
 
   @override
   void dispose() {
+    _authSubscription?.close();
     _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     super.dispose();

@@ -172,6 +172,52 @@ void main() {
     expect(events.single.conversationId, 'convo-resume');
     expect(events.single.content, 'Bonjour');
   });
+
+  test(
+    'fetchMessages maps assistant history content blocks from responseMessage',
+    () async {
+      AuthSession? session = _session();
+
+      final sessionService = _buildSessionService(
+        readSession: () => session,
+        writeSession: (value) async => session = value,
+        clearSession: () async => session = null,
+        onSend: (request) async {
+          expect(request.url.path, '/api/messages');
+          return _jsonResponse({
+            'messages': [
+              {
+                'message': {'sender': 'User', 'text': 'Bonjour'},
+              },
+              {
+                'responseMessage': {
+                  'sender': 'Assistant',
+                  'content': [
+                    {'type': 'text', 'text': 'Salut '},
+                    {'type': 'text', 'text': 'depuis le modele'},
+                  ],
+                },
+              },
+            ],
+            'nextCursor': null,
+          });
+        },
+      );
+
+      final api = ChatiaApiService(
+        baseUrl: 'http://localhost:3080',
+        sessionService: sessionService,
+      );
+
+      final page = await api.fetchMessages('convo-1');
+
+      expect(page.messages, hasLength(2));
+      expect(page.messages[0].role.name, 'user');
+      expect(page.messages[0].text, 'Bonjour');
+      expect(page.messages[1].role.name, 'assistant');
+      expect(page.messages[1].text, 'Salut depuis le modele');
+    },
+  );
 }
 
 LibreChatSessionService _buildSessionService({
@@ -224,6 +270,15 @@ http.StreamedResponse _sseResponse(String body) {
     Stream<List<int>>.value(bytes),
     200,
     headers: {'content-type': 'text/event-stream'},
+  );
+}
+
+http.StreamedResponse _jsonResponse(Map<String, dynamic> body) {
+  final bytes = utf8.encode(jsonEncode(body));
+  return http.StreamedResponse(
+    Stream<List<int>>.value(bytes),
+    200,
+    headers: {'content-type': 'application/json'},
   );
 }
 
