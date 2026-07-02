@@ -22,6 +22,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   late final TextEditingController _confirmPasswordController;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  String? _lastErrorToast;
+  String? _lastInfoToast;
 
   @override
   void initState() {
@@ -35,12 +37,36 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     _confirmPasswordController = TextEditingController();
     _authSubscription = ref.listenManual<AuthController>(
       authControllerProvider,
-      (previous, next) {
+      (_, next) {
+        final hasNewError =
+            next.errorMessage != null &&
+            next.errorMessage!.isNotEmpty &&
+            _lastErrorToast != next.errorMessage;
+        if (hasNewError && mounted) {
+          _lastErrorToast = next.errorMessage;
+          _showToast(
+            message: next.errorMessage!,
+            isError: true,
+          );
+        }
+
+        final hasNewInfo =
+            next.infoMessage != null &&
+            next.infoMessage!.isNotEmpty &&
+            _lastInfoToast != next.infoMessage;
+        if (hasNewInfo && mounted) {
+          _lastInfoToast = next.infoMessage;
+          _showToast(
+            message: next.infoMessage!,
+            isError: false,
+          );
+        }
+
         final registrationCompleted =
             _isRegisterMode &&
             next.infoMessage != null &&
             next.infoMessage!.isNotEmpty &&
-            previous?.infoMessage != next.infoMessage;
+            _lastInfoToast == next.infoMessage;
         if (!registrationCompleted || !mounted) {
           return;
         }
@@ -58,6 +84,62 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
+  void _showToast({
+    required String message,
+    required bool isError,
+  }) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          elevation: 0,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          padding: EdgeInsets.zero,
+          backgroundColor: Colors.transparent,
+          duration: Duration(seconds: isError ? 4 : 3),
+          content: Container(
+            decoration: BoxDecoration(
+              color: isError ? const Color(0xFF8E2424) : const Color(0xFF0F7B6C),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 22,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Icon(
+                  isError
+                      ? Icons.error_outline_rounded
+                      : Icons.check_circle_outline_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+  }
+
   @override
   void dispose() {
     _authSubscription?.close();
@@ -73,6 +155,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
     final theme = Theme.of(context);
+
+    if (auth.errorMessage == null) {
+      _lastErrorToast = null;
+    }
+    if (auth.infoMessage == null) {
+      _lastInfoToast = null;
+    }
 
     // Écran de restauration de session
     if (auth.isRestoring) {
@@ -262,30 +351,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                   );
                             },
                     ),
-                    if (auth.infoMessage != null) ...[
-                      const SizedBox(height: 16),
-                      Text(
-                        auth.infoMessage!,
-                        style: const TextStyle(
-                          color: Color(0xFF18B489),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                    if (auth.errorMessage != null) ...[
-                      const SizedBox(height: 16),
-                      Text(
-                        auth.errorMessage!,
-                        style: const TextStyle(
-                          color: Colors.redAccent,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
                     const SizedBox(height: 18),
                     _AuthFooterLink(
                       isRegisterMode: _isRegisterMode,

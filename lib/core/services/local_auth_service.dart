@@ -35,9 +35,7 @@ class LocalAuthService implements AuthService {
       );
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception(
-          'Connexion impossible : ${response.statusCode} ${response.body}',
-        );
+        throw Exception(_buildSignInErrorMessage(response));
       }
 
       final decoded = jsonDecode(response.body);
@@ -74,6 +72,18 @@ class LocalAuthService implements AuthService {
       return session;
     } finally {
       client.close();
+    }
+  }
+
+  String _buildSignInErrorMessage(http.Response response) {
+    switch (response.statusCode) {
+      case 404:
+        return 'Aucun compte n\'existe avec cette adresse e-mail.';
+      case 401:
+      case 403:
+        return 'Identifiants incorrects. Vérifiez votre e-mail et votre mot de passe.';
+      default:
+        return 'Connexion impossible. Veuillez réessayer.';
     }
   }
 
