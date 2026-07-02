@@ -256,12 +256,15 @@ class LibreChatSessionService {
     }
 
     final request = http.Request('POST', uri('/api/auth/refresh'));
-    request.headers.addAll({
+    final headers = <String, String>{
       'Accept': 'application/json',
       'Content-Type': 'application/json',
-      'Cookie': 'refreshToken=$refreshToken; token_provider=librechat',
       'User-Agent': userAgent,
-    });
+    };
+    if (refreshToken != 'cookie') {
+      headers['Cookie'] = 'refreshToken=$refreshToken; token_provider=librechat';
+    }
+    request.headers.addAll(headers);
 
     final response = await _sendWithClient(request);
     final body = await http.Response.fromStream(response);
@@ -288,8 +291,12 @@ class LibreChatSessionService {
     }
 
     final user = decoded['user'] as Map<String, dynamic>? ?? const {};
+    final nextRefreshToken =
+        _extractCookieValue(body.headers['set-cookie'], 'refreshToken') ??
+        session.refreshToken;
     return session.copyWith(
       accessToken: token,
+      refreshToken: nextRefreshToken,
       userName: user['username']?.toString() ?? session.userName,
       email: user['email']?.toString() ?? session.email,
       expiresAt: _readTokenExpiry(token),
@@ -352,5 +359,14 @@ class LibreChatSessionService {
     } catch (_) {
       return const {};
     }
+  }
+
+  String? _extractCookieValue(String? raw, String name) {
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+
+    final match = RegExp('$name=([^;,\\s]+)').firstMatch(raw);
+    return match?.group(1);
   }
 }

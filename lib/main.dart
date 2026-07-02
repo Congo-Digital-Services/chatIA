@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/router/app_router.dart';
 import 'core/services/auth_service.dart';
-import 'core/services/keycloak_auth_service.dart';
-import 'core/services/librechat_session_service.dart';
+import 'core/services/http_client_factory.dart';
+import 'core/services/local_auth_service.dart';
 import 'core/services/token_storage_service.dart';
 import 'core/services/url_strategy_helper.dart';
 import 'features/auth/providers/auth_state_provider.dart';
@@ -23,10 +23,9 @@ void main() {
         tokenStorageServiceProvider.overrideWithValue(TokenStorageService()),
         authServiceProvider.overrideWith((ref) {
           final storage = ref.watch(tokenStorageServiceProvider);
-          final libreChatSession = ref.watch(libreChatSessionServiceProvider);
-          return KeycloakAuthService(
+          return LocalAuthService(
             storage: storage,
-            libreChatSession: libreChatSession,
+            clientFactory: createCredentialedClient,
           );
         }),
       ],
