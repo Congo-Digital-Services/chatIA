@@ -1,4 +1,4 @@
-enum AuthSessionProvider { mock, openid, librechat }
+enum AuthSessionProvider { mock, local, openid, librechat }
 
 class AuthSession {
   const AuthSession({
@@ -23,7 +23,8 @@ class AuthSession {
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);
   bool get supportsAutomaticRefresh =>
-      provider == AuthSessionProvider.librechat &&
+      (provider == AuthSessionProvider.librechat ||
+          provider == AuthSessionProvider.local) &&
       refreshToken != null &&
       refreshToken!.isNotEmpty;
 
@@ -70,6 +71,19 @@ class AuthSession {
     );
   }
 
+  factory AuthSession.local() {
+    return AuthSession(
+      accessToken: 'local_access_token',
+      refreshToken: null,
+      idToken: null,
+      userName: 'Utilisateur',
+      email: 'utilisateur@chatia.local',
+      expiresAt: DateTime.now().add(const Duration(hours: 8)),
+      isMock: false,
+      provider: AuthSessionProvider.local,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'accessToken': accessToken,
@@ -97,7 +111,7 @@ class AuthSession {
         (value) => value.name == providerName,
         orElse: () => (json['isMock'] as bool? ?? false)
             ? AuthSessionProvider.mock
-            : AuthSessionProvider.openid,
+            : AuthSessionProvider.local,
       ),
     );
   }

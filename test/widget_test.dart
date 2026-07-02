@@ -28,13 +28,22 @@ class _FakeAuthService implements AuthService {
   Future<AuthSession?> restoreSession() async => null;
 
   @override
-  Future<AuthSession?> signInWithSso({bool usePopup = false}) async {
+  Future<AuthSession> signIn({
+    required String email,
+    required String password,
+  }) async {
     return AuthSession.mock();
   }
 
   @override
-  Future<AuthSession> handleOAuthCallback(String code, String state) async {
-    return AuthSession.mock();
+  Future<String> register({
+    required String name,
+    required String username,
+    required String email,
+    required String password,
+    required String confirmPassword,
+  }) async {
+    return 'Please check your email to verify your email address.';
   }
 
   @override

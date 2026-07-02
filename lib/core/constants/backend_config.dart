@@ -3,12 +3,37 @@ class BackendConfig {
 
   static const baseUrl = String.fromEnvironment(
     'CHATIA_API_BASE_URL',
-    defaultValue: 'http://135.125.102.165:3080',
+    defaultValue: 'http://135.125.102.165:3081',
   );
 
   static const mobileAuthExchangeKey = String.fromEnvironment(
     'MOBILE_AUTH_EXCHANGE_KEY',
     defaultValue: '5e1f6e0030ffa45659e401ce502ed9bd',
+  );
+
+  static const authEmail = String.fromEnvironment(
+    'CHATIA_AUTH_EMAIL',
+    defaultValue: '',
+  );
+
+  static const authPassword = String.fromEnvironment(
+    'CHATIA_AUTH_PASSWORD',
+    defaultValue: '',
+  );
+
+  static const chatEndpoint = String.fromEnvironment(
+    'CHATIA_CHAT_ENDPOINT',
+    defaultValue: 'agents',
+  );
+
+  static const chatSpec = String.fromEnvironment(
+    'CHATIA_CHAT_SPEC',
+    defaultValue: 'assistant-global',
+  );
+
+  static const chatAgentId = String.fromEnvironment(
+    'CHATIA_CHAT_AGENT_ID',
+    defaultValue: 'agent_3ncfvg51a3BXyZcQv3cjE',
   );
 
   static const userAgent =

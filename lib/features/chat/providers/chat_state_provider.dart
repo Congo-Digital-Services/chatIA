@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants/backend_config.dart';
 import '../../../core/services/chatia_api_service.dart';
 import '../../../shared/models/chat_message.dart';
 import '../../../shared/models/conversation.dart';
@@ -71,6 +72,20 @@ class ChatController extends ChangeNotifier {
       .where((conversation) => conversation.type == ConversationType.channel)
       .toList();
 
+  void resetForFreshStart() {
+    _loadedConversationIds.clear();
+    _loadingConversationIds.clear();
+    _loadingMoreConversationIds.clear();
+    _conversationNextCursors.clear();
+    _conversationErrors.clear();
+    isLoading = false;
+    isStreaming = false;
+    errorMessage = null;
+    searchQuery = '';
+    _selectedConversation = _createDraftConversation();
+    notifyListeners();
+  }
+
   Future<void> loadConversations() async {
     if (!_apiService.isAvailable) {
       return;
@@ -79,14 +94,27 @@ class ChatController extends ChangeNotifier {
     try {
       isLoading = true;
       errorMessage = null;
+      _loadedConversationIds.clear();
+      _loadingConversationIds.clear();
+      _loadingMoreConversationIds.clear();
+      _conversationNextCursors.clear();
+      _conversationErrors.clear();
       notifyListeners();
 
-      final results = await _apiService.fetchConversations();
-      if (results.isNotEmpty) {
-        _conversations = results;
-        _selectedConversation = results.first;
-        notifyListeners();
-        await selectConversation(results.first, forceReload: true);
+      final results = (await _apiService.fetchConversations())
+          .where(
+            (conversation) =>
+                conversation.type == ConversationType.chat &&
+                conversation.id.trim().isNotEmpty,
+          )
+          .toList();
+      final visibleResults = await _filterEmptyBackendConversations(results);
+
+      if (visibleResults.isNotEmpty) {
+        _conversations = visibleResults;
+        if (_selectedConversation.id != _draftConversationId) {
+          _selectedConversation = _createDraftConversation();
+        }
       } else {
         _conversations = const [];
         _selectedConversation = _createDraftConversation();
@@ -316,10 +344,135 @@ class ChatController extends ChangeNotifier {
       id: _draftConversationId,
       title: 'Nouvelle conversation',
       subtitle: 'Commence un échange',
-      folder: 'Brouillons',
+      folder: 'Chats',
       isPinned: false,
       messages: const [],
     );
+  }
+
+  Future<List<Conversation>> _filterEmptyBackendConversations(
+    List<Conversation> conversations,
+  ) async {
+    final visible = <Conversation>[];
+
+    for (final conversation in conversations) {
+      if (!_looksLikeUntitledBackendConversation(conversation)) {
+        visible.add(conversation);
+        continue;
+      }
+
+      try {
+        final page = await _apiService.fetchMessages(
+          conversation.id,
+          pageSize: 6,
+        );
+        if (page.messages.isNotEmpty) {
+          final derivedTitle = _deriveConversationTitleFromMessages(
+            page.messages,
+          );
+          final derivedSubtitle = _deriveConversationSubtitleFromMessages(
+            page.messages,
+            title: derivedTitle,
+          );
+          visible.add(
+            conversation.copyWith(
+              title: derivedTitle ?? conversation.title,
+              subtitle: derivedSubtitle ?? conversation.subtitle,
+              messages: page.messages,
+            ),
+          );
+        }
+      } catch (_) {
+        // En cas d'échec de vérification, on conserve la conversation
+        // pour éviter de masquer un historique réel.
+        visible.add(conversation);
+      }
+    }
+
+    return visible;
+  }
+
+  bool _looksLikeUntitledBackendConversation(Conversation conversation) {
+    return conversation.title.trim().toLowerCase().startsWith('new chat');
+  }
+
+  String? _deriveConversationTitleFromMessages(List<ChatMessage> messages) {
+    for (final role in [ChatRole.user, ChatRole.assistant]) {
+      for (final message in messages.where((item) => item.role == role)) {
+        final title = _deriveConversationTitle(message.text);
+        if (title != null) {
+          return title;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  String? _deriveConversationSubtitleFromMessages(
+    List<ChatMessage> messages, {
+    String? title,
+  }) {
+    for (final message in messages) {
+      final preview = _normalizePreviewText(message.text);
+      if (preview == null) {
+        continue;
+      }
+      if (title != null && preview == title) {
+        continue;
+      }
+      return preview;
+    }
+
+    return null;
+  }
+
+  String? _deriveConversationTitle(String rawText) {
+    final text = _normalizePreviewText(rawText);
+    if (text == null || text.isEmpty) {
+      return null;
+    }
+
+    if (_isGreetingLike(text)) {
+      return null;
+    }
+
+    if (text.length < 8) {
+      return null;
+    }
+
+    if (text.length <= 48) {
+      return text;
+    }
+
+    return '${text.substring(0, 48).trimRight()}...';
+  }
+
+  String? _normalizePreviewText(String rawText) {
+    final text = rawText.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (text.isEmpty) {
+      return null;
+    }
+    return text;
+  }
+
+  bool _isGreetingLike(String text) {
+    final normalized = text
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-zàâçéèêëîïôûùüÿñæœ0-9\s]'), '')
+        .trim();
+    const greetings = {
+      'bonjour',
+      'bonsoir',
+      'salut',
+      'hello',
+      'hi',
+      'cc',
+      'coucou',
+      'yo',
+      'bjr',
+    };
+    return greetings.contains(normalized);
   }
 
   void createNote() {
@@ -380,7 +533,9 @@ class ChatController extends ChangeNotifier {
 
     await _consumeChatStream(
       assistantId: assistantId,
-      stream: _apiService.sendOpenAIChat(
+      stream: _apiService.sendAgentChat(
+        agentId: BackendConfig.chatAgentId,
+        spec: BackendConfig.chatSpec,
         conversationId: conversationId,
         parentMessageId: parentMessageId,
         messageId: userMessage.id,
@@ -477,6 +632,7 @@ class ChatController extends ChangeNotifier {
     return _uploadAttachedFile(
       assistantId: assistantId,
       userMessageId: userMessage.id,
+      promptText: text.trim().isEmpty ? 'Analyse cette image.' : text.trim(),
       bytes: bytes,
       filename: name,
       size: size,
@@ -522,6 +678,7 @@ class ChatController extends ChangeNotifier {
   Future<void> _uploadAttachedFile({
     required String assistantId,
     required String userMessageId,
+    required String promptText,
     required List<int> bytes,
     required String filename,
     required String size,
@@ -534,6 +691,7 @@ class ChatController extends ChangeNotifier {
       errorMessage = null;
       notifyListeners();
 
+      // ── 1. Upload du fichier ────────────────────────────────────────────────
       final tempFileId = _uuidV4();
       final uploaded = isImage && width != null && height != null
           ? await _apiService.uploadImageFile(
@@ -542,13 +700,16 @@ class ChatController extends ChangeNotifier {
               tempFileId: tempFileId,
               width: width,
               height: height,
+              endpoint: ChatiaApiService.agentsEndpoint,
             )
           : await _apiService.uploadMessageFile(
               bytes: bytes,
               filename: filename,
               tempFileId: tempFileId,
+              endpoint: ChatiaApiService.agentsEndpoint,
             );
 
+      // Mettre à jour le message local avec l'URL backend
       if (uploaded.url.isNotEmpty) {
         _updateMessage(
           userMessageId,
@@ -561,11 +722,37 @@ class ChatController extends ChangeNotifier {
         );
       }
 
-      _updateAssistantMessage(
-        assistantId,
-        isImage
-            ? 'Image envoyée au backend LibreChat.'
-            : 'Fichier envoyé au backend LibreChat : $filename.',
+      // ── 2. Envoi chat avec le file_id pour que l'IA analyse ─────────────────
+      final conversationId = _serverConversationId(_selectedConversation.id);
+      final parentMessageId = _parentMessageId(_selectedConversation);
+      final chatMessageId = _uuidV4();
+
+      // Construction du payload fichier pour LibreChat
+      final filePayload = <String, dynamic>{
+        'file_id': uploaded.fileId.isNotEmpty ? uploaded.fileId : tempFileId,
+        'temp_file_id': tempFileId,
+        'type': uploaded.type.isNotEmpty
+            ? uploaded.type
+            : (isImage ? 'image/jpeg' : 'application/octet-stream'),
+        'filepath': uploaded.filepath,
+        'filename': filename,
+        'source': uploaded.source.isNotEmpty ? uploaded.source : 'local',
+        if (uploaded.width != null) 'width': uploaded.width,
+        if (uploaded.height != null) 'height': uploaded.height,
+      };
+
+      await _consumeChatStream(
+        assistantId: assistantId,
+        stream: _apiService.sendAgentChat(
+          agentId: BackendConfig.chatAgentId,
+          spec: BackendConfig.chatSpec,
+          conversationId: conversationId,
+          parentMessageId: parentMessageId,
+          messageId: chatMessageId,
+          text: promptText,
+          files: [filePayload],
+        ),
+        errorPrefix: 'Erreur analyse image',
       );
     } catch (error) {
       errorMessage = error.toString();
@@ -573,7 +760,6 @@ class ChatController extends ChangeNotifier {
         assistantId,
         'Erreur d\'upload : ${error.toString()}',
       );
-    } finally {
       isStreaming = false;
       notifyListeners();
     }
@@ -625,16 +811,18 @@ class ChatController extends ChangeNotifier {
   }
 
   void _appendMessages(ChatMessage userMessage, ChatMessage assistantMessage) {
+    final nextMessages = [
+      ..._selectedConversation.messages,
+      userMessage,
+      assistantMessage,
+    ];
+    final derivedTitle = _deriveConversationTitleFromMessages(nextMessages);
     final updated = _selectedConversation.copyWith(
       title: _selectedConversation.title == 'Nouvelle conversation'
-          ? userMessage.text
+          ? (derivedTitle ?? _selectedConversation.title)
           : _selectedConversation.title,
       subtitle: userMessage.text,
-      messages: [
-        ..._selectedConversation.messages,
-        userMessage,
-        assistantMessage,
-      ],
+      messages: nextMessages,
     );
 
     final index = _conversations.indexWhere(
@@ -851,23 +1039,40 @@ class ChatController extends ChangeNotifier {
       final details = reset
           ? await _apiService.fetchConversation(conversationId)
           : _conversationById(conversationId);
-      final page = await _apiService.fetchMessages(
-        conversationId,
-        cursor: cursor,
-      );
+      PaginatedMessagesResponse? page;
+      try {
+        page = await _apiService.fetchMessages(conversationId, cursor: cursor);
+      } catch (error) {
+        if (!reset || details.messages.isEmpty) {
+          rethrow;
+        }
+      }
       final previous = _conversationById(conversationId);
+      final resolvedTitle =
+          _looksLikeUntitledBackendConversation(details) &&
+              !_looksLikeUntitledBackendConversation(previous)
+          ? previous.title
+          : details.title;
+      final resolvedSubtitle =
+          details.subtitle.trim().isEmpty && previous.subtitle.trim().isNotEmpty
+          ? previous.subtitle
+          : details.subtitle;
       final mergedMessages = reset
-          ? page.messages
+          ? (page?.messages.isNotEmpty == true ? page!.messages : details.messages)
           : <ChatMessage>[
               ...previous.messages,
-              ...page.messages.where(
+              ...(page?.messages ?? const <ChatMessage>[]).where(
                 (message) => !previous.messages.any((m) => m.id == message.id),
               ),
             ];
-      final updated = details.copyWith(messages: mergedMessages);
+      final updated = details.copyWith(
+        title: resolvedTitle,
+        subtitle: resolvedSubtitle,
+        messages: mergedMessages,
+      );
 
       _replaceConversation(updated);
-      _conversationNextCursors[conversationId] = page.nextCursor;
+      _conversationNextCursors[conversationId] = page?.nextCursor;
       _loadedConversationIds.add(conversationId);
       _conversationErrors.remove(conversationId);
       if (_selectedConversation.id == conversationId) {

@@ -253,21 +253,9 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
           AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             decoration: BoxDecoration(
-              color: isDark
-                  ? AppThemeColors.card
-                  : AppThemeColors.card.withValues(alpha: 0.98),
+              color: isDark ? AppThemeColors.card : AppThemeColors.card,
               borderRadius: BorderRadius.circular(28),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.07),
-                  blurRadius: 24,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-              border: Border.all(
-                color: AppThemeColors.stroke,
-                width: 1,
-              ),
+              border: Border.all(color: AppThemeColors.stroke, width: 1),
             ),
             child: _isRecording
                 ? Row(
@@ -300,12 +288,15 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                           child: InkWell(
                             customBorder: const CircleBorder(),
                             onTap: _sendRecording,
-                            child: const SizedBox(
+                            child: SizedBox(
                               width: 44,
                               height: 44,
                               child: Icon(
                                 CupertinoIcons.arrow_up,
-                                color: Colors.white,
+                                // L'icone doit contraster avec textStrong:
+                                // mode clair: textStrong=noir => icone blanche
+                                // mode sombre: textStrong=blanc => icone noire
+                                color: isDark ? Colors.black : Colors.white,
                                 size: 20,
                               ),
                             ),
@@ -418,26 +409,29 @@ class _ComposerIconBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: Colors.transparent,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onTap,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(
-              icon,
-              size: 22,
-              color: isDark ? Colors.white : Colors.black,
-            ),
+    final button = Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(
+            icon,
+            size: 22,
+            color: isDark ? Colors.white : Colors.black,
           ),
         ),
       ),
     );
+
+    if (tooltip.isEmpty) {
+      return button;
+    }
+
+    return Tooltip(message: tooltip, excludeFromSemantics: true, child: button);
   }
 }
 
@@ -449,16 +443,19 @@ class _SendButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // L'icone doit contraster avec la couleur de fond textStrong
+    final iconColor = isDark ? Colors.black : Colors.white;
     return Material(
       color: AppThemeColors.textStrong,
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onTap,
-        child: const SizedBox(
+        child: SizedBox(
           width: 44,
           height: 44,
-          child: Icon(CupertinoIcons.arrow_up, color: Colors.white, size: 20),
+          child: Icon(CupertinoIcons.arrow_up, color: iconColor, size: 20),
         ),
       ),
     );
@@ -552,7 +549,9 @@ class _BouncingWaveformState extends State<_BouncingWaveform>
               width: 3,
               height: h,
               decoration: BoxDecoration(
-                color: isDark ? Colors.grey[850] : Colors.grey[200],
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.5)
+                    : Colors.black.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(1.5),
               ),
             );

@@ -26,7 +26,7 @@ final chatiaConfigProvider = FutureProvider<Map<String, dynamic>>((ref) {
 class ChatiaApiService {
   ChatiaApiService({required this.baseUrl, required this.sessionService});
 
-  static const defaultOpenAiModel = 'gpt-4';
+  static const agentsEndpoint = 'agents';
 
   final String baseUrl;
   final LibreChatSessionService sessionService;
@@ -202,41 +202,18 @@ class ChatiaApiService {
     }
 
     final jsonBody = jsonDecode(response.body);
-    if (jsonBody is! Map<String, dynamic>) {
+    final payload = jsonBody is Map<String, dynamic>
+        ? (jsonBody['conversation'] is Map<String, dynamic>
+              ? Map<String, dynamic>.from(
+                  jsonBody['conversation'] as Map<String, dynamic>,
+                )
+              : jsonBody)
+        : null;
+    if (payload == null) {
       throw Exception('Réponse conversation inattendue.');
     }
 
-    return _mapApiConversation(jsonBody);
-  }
-
-  Future<List<String>> fetchModels() async {
-    final response = await _sendJson('GET', '/api/models');
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Impossible de charger les modèles : ${response.statusCode}',
-      );
-    }
-
-    final jsonBody = jsonDecode(response.body);
-    final items = jsonBody is Map<String, dynamic>
-        ? (jsonBody['models'] as List<dynamic>?) ?? []
-        : (jsonBody as List<dynamic>);
-
-    return items
-        .map((item) {
-          if (item is String) {
-            return item;
-          }
-          if (item is Map<String, dynamic>) {
-            return item['name']?.toString() ??
-                item['id']?.toString() ??
-                item['model']?.toString() ??
-                '';
-          }
-          return '';
-        })
-        .where((model) => model.isNotEmpty)
-        .toList();
+    return _mapApiConversation(payload);
   }
 
   Future<PaginatedMessagesResponse> fetchMessages(
@@ -262,10 +239,7 @@ class ChatiaApiService {
     }
 
     final jsonBody = jsonDecode(response.body);
-    // Route recommandée : {messages: [...]} ; fallback sur tableau direct.
-    final items = jsonBody is Map<String, dynamic>
-        ? (jsonBody['messages'] as List<dynamic>?) ?? []
-        : (jsonBody as List<dynamic>);
+    final items = _extractMessagesList(jsonBody);
     final nextCursor = jsonBody is Map<String, dynamic>
         ? jsonBody['nextCursor']?.toString()
         : null;
@@ -384,69 +358,52 @@ class ChatiaApiService {
     }
   }
 
-  Future<OpenAIChatResponse> startOpenAIChat({
-    required String parentMessageId,
-    required String messageId,
-    required String text,
-    String? conversationId,
-    String model = defaultOpenAiModel,
-  }) async {
-    _logAuthDebug('POST /api/agents/chat/openAI');
-    _logRequestDebug(
-      'POST /api/agents/chat/openAI',
-      _uri('/api/agents/chat/openAI'),
-    );
-    final body = jsonEncode({
-      'endpoint': 'openAI',
-      'model': model,
-      'conversationId': conversationId,
-      'parentMessageId': parentMessageId,
-      'messageId': messageId,
-      'text': text,
-    });
-    _logFullDebug('POST /api/agents/chat/openAI body', body);
-
-    final response = await _sendJson(
-      'POST',
-      '/api/agents/chat/openAI',
-      body: body,
-    );
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Échec démarrage OpenAI: ${response.statusCode} ${response.body}',
-      );
-    }
-
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
-    return OpenAIChatResponse(
-      streamId: data['streamId']?.toString() ?? '',
-      conversationId: data['conversationId']?.toString(),
-    );
-  }
-
-  /// POST /api/agents/chat
-  /// Démarre une conversation avec un agent LibreChat spécifique.
-  /// Nécessite un [agentId] valide configuré sur l'instance LibreChat.
-  /// Retourne un [OpenAIChatResponse] avec le streamId pour le flux SSE.
   Future<OpenAIChatResponse> startAgentChat({
     required String agentId,
     required String parentMessageId,
     required String messageId,
     required String text,
     String? conversationId,
+    List<Map<String, dynamic>>? files,
+    String spec = 'assistant-global',
   }) async {
-    _logAuthDebug('POST /api/agents/chat');
-    _logRequestDebug('POST /api/agents/chat', _uri('/api/agents/chat'));
+    _logAuthDebug('POST /api/agents/chat/$agentsEndpoint');
+    _logRequestDebug(
+      'POST /api/agents/chat/$agentsEndpoint',
+      _uri('/api/agents/chat/$agentsEndpoint'),
+    );
     final body = jsonEncode({
-      'agent_id': agentId,
-      'conversationId': conversationId,
-      'parentMessageId': parentMessageId,
-      'messageId': messageId,
       'text': text,
+      'sender': 'User',
+      'clientTimestamp': DateTime.now().toIso8601String(),
+      'isCreatedByUser': true,
+      'parentMessageId': parentMessageId,
+      'conversationId': conversationId,
+      'messageId': messageId,
+      'error': false,
+      'endpoint': agentsEndpoint,
+      'spec': spec,
+      'agent_id': agentId,
+      'key': DateTime.now().toUtc().toIso8601String(),
+      'isTemporary': false,
+      'isRegenerate': false,
+      'isContinued': false,
+      'ephemeralAgent': {
+        'mcp': const [],
+        'web_search': false,
+        'file_search': false,
+        'execute_code': false,
+        'artifacts': '',
+      },
+      if (files != null && files.isNotEmpty) 'files': files,
     });
-    _logFullDebug('POST /api/agents/chat body', body);
+    _logFullDebug('POST /api/agents/chat/$agentsEndpoint body', body);
 
-    final response = await _sendJson('POST', '/api/agents/chat', body: body);
+    final response = await _sendJson(
+      'POST',
+      '/api/agents/chat/$agentsEndpoint',
+      body: body,
+    );
     if (response.statusCode != 200) {
       throw Exception(
         'Échec démarrage chat agent ($agentId): ${response.statusCode} ${response.body}',
@@ -468,6 +425,8 @@ class ChatiaApiService {
     required String text,
     String? conversationId,
     bool resume = false,
+    List<Map<String, dynamic>>? files,
+    String spec = 'assistant-global',
   }) async* {
     final startResponse = await startAgentChat(
       agentId: agentId,
@@ -475,6 +434,8 @@ class ChatiaApiService {
       parentMessageId: parentMessageId,
       messageId: messageId,
       text: text,
+      files: files,
+      spec: spec,
     );
 
     final streamId = startResponse.streamId;
@@ -497,7 +458,7 @@ class ChatiaApiService {
     required String tempFileId,
     required int width,
     required int height,
-    String endpoint = 'openAI',
+    String endpoint = agentsEndpoint,
   }) async {
     if (width <= 0 || height <= 0) {
       throw Exception('Dimensions image manquantes pour le backend ChatIA.');
@@ -523,7 +484,7 @@ class ChatiaApiService {
     required List<int> bytes,
     required String filename,
     required String tempFileId,
-    String endpoint = 'openAI',
+    String endpoint = agentsEndpoint,
   }) async {
     final data = await _sendMultipartJson(
       path: '/api/files',
@@ -592,36 +553,6 @@ class ChatiaApiService {
     }
 
     return decoded;
-  }
-
-  Stream<ChatStreamEvent> sendOpenAIChat({
-    required String parentMessageId,
-    required String messageId,
-    required String text,
-    String? conversationId,
-    String model = defaultOpenAiModel,
-    bool resume = false,
-  }) async* {
-    final startResponse = await startOpenAIChat(
-      conversationId: conversationId,
-      parentMessageId: parentMessageId,
-      messageId: messageId,
-      text: text,
-      model: model,
-    );
-
-    final streamId = startResponse.streamId;
-    if (streamId.isEmpty) {
-      throw Exception('StreamId manquant depuis le backend.');
-    }
-
-    await for (final event in streamChat(
-      streamId,
-      resume: resume,
-      fallbackConversationId: startResponse.conversationId,
-    )) {
-      yield event;
-    }
   }
 
   Stream<ChatStreamEvent> streamChat(
@@ -743,6 +674,8 @@ class ChatiaApiService {
       }
     }
 
+    _logFullDebug('SSE block', blockLines.join('\n'));
+
     final rawData = dataLines.join('\n').trim();
     if (rawData.isEmpty ||
         rawData == '[DONE]' ||
@@ -774,7 +707,10 @@ class ChatiaApiService {
     }
 
     final content = _extractMessageText(payload, resolvedEvent: resolvedEvent);
-    final isFinal = payload['final'] == true;
+    final isFinal =
+        payload['final'] == true ||
+        _hasChoiceFinishReason(payload) ||
+        resolvedEvent == 'done';
     final isSync = payload['sync'] == true;
     final isCreated = payload['created'] == true;
 
@@ -843,6 +779,11 @@ class ChatiaApiService {
     Map<String, dynamic> payload, {
     required String resolvedEvent,
   }) {
+    final choicesContent = _extractChoicesText(payload['choices']);
+    if (choicesContent.isNotEmpty) {
+      return choicesContent;
+    }
+
     if (payload['final'] == true) {
       final responseMessage = _asMap(payload['responseMessage']);
       final finalContent = _extractTextFromContent(responseMessage?['content']);
@@ -879,10 +820,20 @@ class ChatiaApiService {
       return text;
     }
 
+    final content = _extractStringOrContent(payload['content']);
+    if (content.isNotEmpty) {
+      return content;
+    }
+
     final message = _asMap(payload['message']);
     final messageText = message?['text']?.toString();
     if (messageText != null && messageText.isNotEmpty) {
       return messageText;
+    }
+
+    final stringMessageContent = _extractStringOrContent(message?['content']);
+    if (stringMessageContent.isNotEmpty) {
+      return stringMessageContent;
     }
 
     final messageContent = _extractTextFromContent(message?['content']);
@@ -917,7 +868,82 @@ class ChatiaApiService {
     return '';
   }
 
+  bool _hasChoiceFinishReason(Map<String, dynamic> payload) {
+    final choices = payload['choices'];
+    if (choices is! List || choices.isEmpty) {
+      return false;
+    }
+
+    for (final choice in choices) {
+      final map = _asMap(choice);
+      final finishReason = map?['finish_reason']?.toString();
+      if (finishReason != null &&
+          finishReason.isNotEmpty &&
+          finishReason.toLowerCase() != 'null') {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  String _extractChoicesText(Object? rawChoices) {
+    if (rawChoices is! List) {
+      return '';
+    }
+
+    final buffer = StringBuffer();
+    for (final choice in rawChoices) {
+      final map = _asMap(choice);
+      if (map == null) {
+        continue;
+      }
+
+      final delta = _asMap(map['delta']);
+      final deltaContent = _extractStringOrContent(delta?['content']);
+      if (deltaContent.isNotEmpty) {
+        buffer.write(deltaContent);
+        continue;
+      }
+
+      final message = _asMap(map['message']);
+      final messageContent = _extractStringOrContent(message?['content']);
+      if (messageContent.isNotEmpty) {
+        buffer.write(messageContent);
+        continue;
+      }
+
+      final text = map['text']?.toString();
+      if (text != null && text.isNotEmpty) {
+        buffer.write(text);
+      }
+    }
+
+    return buffer.toString();
+  }
+
+  String _extractStringOrContent(Object? value) {
+    if (value is String) {
+      return value;
+    }
+
+    return _extractTextFromContent(value);
+  }
+
+  String _firstNonEmptyString(List<String?> values) {
+    for (final value in values) {
+      if (value != null && value.isNotEmpty) {
+        return value;
+      }
+    }
+    return '';
+  }
+
   String _extractTextFromContent(Object? content) {
+    if (content is String) {
+      return content;
+    }
+
     if (content is! List) {
       return '';
     }
@@ -1001,15 +1027,34 @@ class ChatiaApiService {
   }
 
   ChatMessage _mapApiMessage(Map<String, dynamic> json) {
+    final nestedMessage = _asMap(json['message']);
+    final responseMessage = _asMap(json['responseMessage']);
     final id =
         json['id']?.toString() ??
+        nestedMessage?['id']?.toString() ??
+        responseMessage?['id']?.toString() ??
         json['messageId']?.toString() ??
         DateTime.now().microsecondsSinceEpoch.toString();
     final sender =
         json['sender']?.toString().toLowerCase() ??
+        nestedMessage?['sender']?.toString().toLowerCase() ??
+        responseMessage?['sender']?.toString().toLowerCase() ??
         json['role']?.toString().toLowerCase() ??
+        nestedMessage?['role']?.toString().toLowerCase() ??
+        responseMessage?['role']?.toString().toLowerCase() ??
+        ((json['isCreatedByUser'] == true ||
+                nestedMessage?['isCreatedByUser'] == true)
+            ? 'user'
+            : null) ??
         'assistant';
-    final text = json['text']?.toString() ?? json['content']?.toString() ?? '';
+    final text = _firstNonEmptyString([
+      json['text']?.toString(),
+      nestedMessage?['text']?.toString(),
+      responseMessage?['text']?.toString(),
+      _extractStringOrContent(json['content']),
+      _extractStringOrContent(nestedMessage?['content']),
+      _extractStringOrContent(responseMessage?['content']),
+    ]);
     final file = _firstFile(json);
     final fileType = file?['type']?.toString() ?? file?['mimeType']?.toString();
 
@@ -1051,6 +1096,45 @@ class ChatiaApiService {
     final uri = Uri.tryParse(pathOrUrl);
     if (uri != null && uri.hasScheme) return pathOrUrl;
     return Uri.parse(baseUrl).resolve(pathOrUrl).toString();
+  }
+
+  List<dynamic> _extractMessagesList(dynamic jsonBody) {
+    if (jsonBody is List<dynamic>) {
+      return jsonBody;
+    }
+
+    if (jsonBody is! Map<String, dynamic>) {
+      return const [];
+    }
+
+    final directMessages = jsonBody['messages'];
+    if (directMessages is List<dynamic>) {
+      return directMessages;
+    }
+
+    final history = jsonBody['history'];
+    if (history is List<dynamic>) {
+      return history;
+    }
+
+    final conversation = _asMap(jsonBody['conversation']);
+    final nestedMessages = conversation?['messages'];
+    if (nestedMessages is List<dynamic>) {
+      return nestedMessages;
+    }
+
+    final data = jsonBody['data'];
+    if (data is List<dynamic>) {
+      return data;
+    }
+    if (data is Map<String, dynamic>) {
+      final dataMessages = data['messages'];
+      if (dataMessages is List<dynamic>) {
+        return dataMessages;
+      }
+    }
+
+    return const [];
   }
 }
 

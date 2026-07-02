@@ -26,18 +26,38 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   bool _isVoiceCallActive = false;
   String? _lastConversationId;
   int _lastMessageCount = 0;
+  ProviderSubscription<AuthController>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_handleScroll);
+    _authSubscription = ref.listenManual<AuthController>(
+      authControllerProvider,
+      (previous, next) {
+        final previousToken = previous?.session?.accessToken;
+        final nextToken = next.session?.accessToken;
+        final chatController = ref.read(chatControllerProvider);
+        if (nextToken == null || nextToken.isEmpty) {
+          chatController.resetForFreshStart();
+          return;
+        }
+        if (nextToken.isNotEmpty && previousToken != nextToken) {
+          chatController.resetForFreshStart();
+          chatController.loadConversations();
+        }
+      },
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(chatControllerProvider).loadConversations();
+      final chatController = ref.read(chatControllerProvider);
+      chatController.resetForFreshStart();
+      chatController.loadConversations();
     });
   }
 
   @override
   void dispose() {
+    _authSubscription?.close();
     _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     super.dispose();
@@ -106,9 +126,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                         onTap: () => _scaffoldKey.currentState?.openDrawer(),
                         tooltip: 'Menu',
                       ),
-                      const SizedBox(width: 10),
                       const Spacer(),
-                      const SizedBox(width: 10),
+                      Image.asset(
+                        'assets/icons/congo_logo.png',
+                        height: 36,
+                        fit: BoxFit.contain,
+                      ),
+                      const Spacer(),
                       // Nouvelle conversation / note
                       _HeaderButton(
                         icon: isNote
@@ -359,26 +383,29 @@ class _HeaderButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: Colors.transparent,
+    final button = Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
         borderRadius: BorderRadius.circular(22),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-          onTap: onTap,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(
-              icon,
-              size: 22,
-              color: isDark ? Colors.white : Colors.black,
-            ),
+        onTap: onTap,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(
+            icon,
+            size: 22,
+            color: isDark ? Colors.white : Colors.black,
           ),
         ),
       ),
     );
+
+    if (tooltip.isEmpty) {
+      return button;
+    }
+
+    return Tooltip(message: tooltip, excludeFromSemantics: true, child: button);
   }
 }
 
@@ -489,26 +516,29 @@ class _ActionBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Tooltip(
-      message: label,
-      child: Material(
-        color: Colors.transparent,
+    final button = Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
         borderRadius: BorderRadius.circular(22),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-          onTap: onTap,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(
-              icon,
-              size: 20,
-              color: isDark ? Colors.white70 : Colors.black54,
-            ),
+        onTap: onTap,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(
+            icon,
+            size: 20,
+            color: isDark ? Colors.white70 : Colors.black54,
           ),
         ),
       ),
     );
+
+    if (label.isEmpty) {
+      return button;
+    }
+
+    return Tooltip(message: label, excludeFromSemantics: true, child: button);
   }
 }
 
@@ -881,21 +911,24 @@ class _CallControlBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: active ? Colors.white24 : Colors.white10,
-            border: Border.all(color: Colors.white24),
-          ),
-          child: Icon(icon, color: Colors.white, size: 20),
+    final button = GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: active ? Colors.white24 : Colors.white10,
+          border: Border.all(color: Colors.white24),
         ),
+        child: Icon(icon, color: Colors.white, size: 20),
       ),
     );
+
+    if (tooltip.isEmpty) {
+      return button;
+    }
+
+    return Tooltip(message: tooltip, excludeFromSemantics: true, child: button);
   }
 }

@@ -42,12 +42,11 @@ class MessageBubble extends ConsumerWidget {
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
+        final isDarkSheet = Theme.of(ctx).brightness == Brightness.dark;
         return Container(
           margin: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Theme.of(ctx).brightness == Brightness.dark
-                ? AppThemeColors.card
-                : Colors.white,
+            color: isDarkSheet ? const Color(0xFF1C1C1C) : const Color(0xFFF5F5F5),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Column(
@@ -158,6 +157,14 @@ class MessageBubble extends ConsumerWidget {
   }
 
   Widget _buildBubble(BuildContext context, ThemeData theme, bool isUser) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bubbleColor = isUser
+        ? (isDark ? Colors.white : Colors.black)
+        : Colors.transparent;
+    final textColor = isUser
+        ? (isDark ? Colors.black : Colors.white)
+        : (isDark ? Colors.white : Colors.black);
+
     if (isUser) {
       return Align(
         alignment: Alignment.centerRight,
@@ -175,10 +182,9 @@ class MessageBubble extends ConsumerWidget {
                   vertical: 12,
                 ),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? AppThemeColors.cardStrong
-                      : AppThemeColors.pill,
-                  borderRadius: BorderRadius.circular(22),
+                  color: bubbleColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: isDark ? Colors.white : Colors.black, width: 1),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -204,7 +210,7 @@ class MessageBubble extends ConsumerWidget {
                       Text(
                         message.text,
                         style: theme.textTheme.bodyLarge?.copyWith(
-                          color: AppThemeColors.textStrong,
+                          color: textColor,
                           height: 1.45,
                         ),
                       ),
@@ -227,14 +233,14 @@ class MessageBubble extends ConsumerWidget {
           height: 28,
           margin: const EdgeInsets.only(top: 2, right: 10),
           decoration: BoxDecoration(
-            color: AppThemeColors.textStrong,
-            borderRadius: BorderRadius.circular(8),
+            color: isDark ? Colors.white : Colors.black,
+            borderRadius: BorderRadius.circular(6),
           ),
-          child: const Center(
+          child: Center(
             child: Icon(
               Icons.auto_awesome_rounded,
               size: 14,
-              color: Colors.white,
+              color: isDark ? Colors.black : Colors.white,
             ),
           ),
         ),
@@ -251,11 +257,9 @@ class MessageBubble extends ConsumerWidget {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? AppThemeColors.cardStrong
-                          : AppThemeColors.card.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppThemeColors.stroke),
+                      color: isDark ? Colors.black : Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppThemeColors.stroke, width: 1),
                     ),
                     child: _VoiceMessagePlayer(
                       audioUrl: message.audioUrl!,
@@ -333,9 +337,13 @@ class _VoiceMessagePlayerState extends State<_VoiceMessagePlayer> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final btnBgColor = widget.isUser
-        ? Colors.black87
+        ? (isDark ? Colors.black : Colors.white)
         : AppThemeColors.pillSelected;
+    final iconColor = widget.isUser
+        ? (isDark ? Colors.white : Colors.black)
+        : (isDark ? Colors.black : Colors.white);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -348,11 +356,12 @@ class _VoiceMessagePlayerState extends State<_VoiceMessagePlayer> {
             decoration: BoxDecoration(
               color: btnBgColor,
               shape: BoxShape.circle,
+              border: Border.all(color: isDark ? Colors.white : Colors.black, width: 1),
             ),
             child: Icon(
               _isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
               size: 16,
-              color: widget.isUser ? Colors.white : AppThemeColors.textStrong,
+              color: iconColor,
             ),
           ),
         ),
@@ -375,16 +384,21 @@ class _VoiceMessagePlayerState extends State<_VoiceMessagePlayer> {
                           : index % 2 == 0
                           ? 4.0
                           : 0.0);
+                  // Couleur waveform thème-aware
+                  final waveFilledColor = widget.isUser
+                      ? (isDark ? Colors.white70 : Colors.black87)
+                      : AppThemeColors.accent;
+                  final waveUnfillColor = widget.isUser
+                      ? (isDark
+                          ? Colors.white.withValues(alpha: 0.25)
+                          : Colors.black.withValues(alpha: 0.20))
+                      : AppThemeColors.textMuted.withValues(alpha: 0.4);
                   return Container(
                     margin: const EdgeInsets.symmetric(horizontal: 1),
                     width: 2.5,
                     height: barHeight,
                     decoration: BoxDecoration(
-                      color: filled
-                          ? (widget.isUser
-                                ? Colors.black87
-                                : AppThemeColors.accent)
-                          : (widget.isUser ? Colors.black26 : Colors.black12),
+                      color: filled ? waveFilledColor : waveUnfillColor,
                       borderRadius: BorderRadius.circular(1),
                     ),
                   );
@@ -397,7 +411,7 @@ class _VoiceMessagePlayerState extends State<_VoiceMessagePlayer> {
               style: theme.textTheme.bodySmall?.copyWith(
                 fontSize: 10,
                 color: widget.isUser
-                    ? Colors.black54
+                    ? (isDark ? Colors.white54 : Colors.black54)
                     : AppThemeColors.textMuted,
               ),
             ),
@@ -446,12 +460,12 @@ class _FileMessageBlock extends StatelessWidget {
                     return Container(
                       width: 200,
                       height: 150,
-                      color: Colors.black12,
-                      child: const Center(
+                      color: AppThemeColors.pill,
+                      child: Center(
                         child: Icon(
                           CupertinoIcons.photo,
                           size: 36,
-                          color: Colors.grey,
+                          color: AppThemeColors.textMuted,
                         ),
                       ),
                     );

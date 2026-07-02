@@ -3,117 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/constants/backend_config.dart';
 import '../../../core/services/chatia_api_service.dart';
 import '../../auth/providers/auth_state_provider.dart';
 import '../../../shared/data/mock_data.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/conduit_card.dart';
-import '../../../shared/widgets/settings_tile.dart';
+
 import '../providers/settings_provider.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
-
-  // Helper method to show standard selection dialog
-  void _showSelectionDialog<T>({
-    required BuildContext context,
-    required String title,
-    required List<T> values,
-    required List<String> displayNames,
-    required List<IconData>? icons,
-    required T currentValue,
-    required ValueChanged<T> onSelected,
-  }) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        return AlertDialog(
-          backgroundColor: AppThemeColors.card,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-          title: Text(
-            title,
-            style: theme.textTheme.titleLarge?.copyWith(
-              color: AppThemeColors.textStrong,
-            ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: List.generate(values.length, (index) {
-              final val = values[index];
-              final isSelected = val == currentValue;
-              return Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: () {
-                    onSelected(val);
-                    Navigator.of(ctx).pop();
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                    margin: const EdgeInsets.only(bottom: 4),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? AppThemeColors.accent.withValues(alpha: 0.1)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(14),
-                      border: isSelected
-                          ? Border.all(
-                              color: AppThemeColors.accent.withValues(
-                                alpha: 0.4,
-                              ),
-                            )
-                          : null,
-                    ),
-                    child: Row(
-                      children: [
-                        if (icons != null) ...[
-                          Icon(
-                            icons[index],
-                            size: 20,
-                            color: isSelected
-                                ? AppThemeColors.accent
-                                : AppThemeColors.textSoft,
-                          ),
-                          const SizedBox(width: 12),
-                        ],
-                        Expanded(
-                          child: Text(
-                            displayNames[index],
-                            style: theme.textTheme.bodyLarge?.copyWith(
-                              fontWeight: isSelected
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
-                              color: isSelected
-                                  ? AppThemeColors.accent
-                                  : AppThemeColors.textStrong,
-                            ),
-                          ),
-                        ),
-                        if (isSelected)
-                          Icon(
-                            Icons.check_circle_rounded,
-                            color: AppThemeColors.accent,
-                            size: 20,
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ),
-        );
-      },
-    );
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -121,19 +20,14 @@ class SettingsPage extends ConsumerWidget {
     final user = auth.session;
     final theme = Theme.of(context);
     final settings = ref.watch(settingsControllerProvider);
-    final backendConfig = ref.watch(chatiaConfigProvider);
     final isDark = theme.brightness == Brightness.dark;
 
     // Localized labels
     final titleLabel = settings.translate('settings_title');
     final displaySection = settings.translate('display');
     final darkModeLabel = settings.translate('dark_mode');
-    final accentLabel = settings.translate('accent_palette');
-    final shortcutsLabel = settings.translate('shortcuts');
     final languageSection = settings.translate('language');
     final appLanguageLabel = settings.translate('app_language');
-    final voiceSection = settings.translate('voice_dictation');
-    final engineLabel = settings.translate('recognition_engine');
     final profileSection = settings.translate('profile');
     final sessionLabel = settings.translate('session');
     final signOutLabel = settings.translate('sign_out');
@@ -149,66 +43,6 @@ class SettingsPage extends ConsumerWidget {
           return settings.translate('theme_system');
       }
     }
-
-    String getShortcutSubtitle() {
-      switch (settings.shortcutAction) {
-        case 'none':
-          return settings.translate('shortcut_none');
-        case 'voice_call':
-          return settings.translate('shortcut_voice_call');
-        case 'file_picker':
-          return settings.translate('shortcut_file_picker');
-        case 'create_note':
-          return settings.translate('shortcut_create_note');
-        case 'new_chat':
-          return settings.translate('shortcut_new_chat');
-        default:
-          return settings.translate('shortcut_none');
-      }
-    }
-
-    IconData getShortcutIcon() {
-      switch (settings.shortcutAction) {
-        case 'voice_call':
-          return CupertinoIcons.phone_fill;
-        case 'file_picker':
-          return CupertinoIcons.folder_fill;
-        case 'create_note':
-          return CupertinoIcons.doc_fill;
-        case 'new_chat':
-          return CupertinoIcons.chat_bubble_fill;
-        default:
-          return CupertinoIcons.bolt;
-      }
-    }
-
-    String getLanguageSubtitle() {
-      return SettingsController.languageName(settings.language);
-    }
-
-    String getBackendSubtitle() {
-      return backendConfig.when(
-        data: (config) {
-          final emailLogin = config['emailLoginEnabled'] == true;
-          final registration = config['registrationEnabled'] == true;
-          final emailLabel = emailLogin ? 'email actif' : 'email inactif';
-          final registerLabel = registration
-              ? 'inscription active'
-              : 'inscription inactive';
-          return '${BackendConfig.baseUrl} • $emailLabel • $registerLabel';
-        },
-        loading: () => 'Connexion à ${BackendConfig.baseUrl}...',
-        error: (error, _) => '${BackendConfig.baseUrl} • indisponible',
-      );
-    }
-
-    final paletteColors = [
-      const Color(0xFF18B489), // Green (Conduit default)
-      const Color(0xFF1976D2), // Blue
-      const Color(0xFF9C27B0), // Purple
-      const Color(0xFFE65100), // Orange
-      const Color(0xFF0E0E0E), // Dark/Black
-    ];
 
     return Scaffold(
       backgroundColor: AppThemeColors.background,
@@ -230,9 +64,8 @@ class SettingsPage extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   decoration: BoxDecoration(
                     color: AppThemeColors.card,
-                    borderRadius: BorderRadius.circular(22),
+                    borderRadius: BorderRadius.circular(24),
                     border: Border.all(color: AppThemeColors.stroke),
-                    boxShadow: AppThemeShadows.soft,
                   ),
                   child: Center(
                     child: Text(
@@ -264,56 +97,6 @@ class SettingsPage extends ConsumerWidget {
               subtitle: getThemeSubtitle(),
             ),
 
-            const SizedBox(height: 12),
-            SettingsTile(
-              icon: CupertinoIcons.square_stack,
-              title: accentLabel,
-              subtitle: getLanguageSubtitle() == 'Français'
-                  ? 'Palette active'
-                  : getLanguageSubtitle() == 'Español'
-                  ? 'Paleta activa'
-                  : 'Active palette',
-              palette: paletteColors,
-              selectedColor: settings.accentColor,
-              onPaletteColorSelected: (color) => settings.setAccentColor(color),
-            ),
-            const SizedBox(height: 12),
-            SettingsTile(
-              icon: getShortcutIcon(),
-              title: shortcutsLabel,
-              subtitle: getShortcutSubtitle(),
-              trailing: CupertinoIcons.chevron_down,
-              onTap: () {
-                _showSelectionDialog<String>(
-                  context: context,
-                  title: settings.translate('select_shortcut'),
-                  values: [
-                    'none',
-                    'voice_call',
-                    'file_picker',
-                    'create_note',
-                    'new_chat',
-                  ],
-                  displayNames: [
-                    settings.translate('shortcut_none'),
-                    settings.translate('shortcut_voice_call'),
-                    settings.translate('shortcut_file_picker'),
-                    settings.translate('shortcut_create_note'),
-                    settings.translate('shortcut_new_chat'),
-                  ],
-                  icons: [
-                    CupertinoIcons.minus_circle,
-                    CupertinoIcons.phone_fill,
-                    CupertinoIcons.folder_fill,
-                    CupertinoIcons.doc_fill,
-                    CupertinoIcons.chat_bubble_fill,
-                  ],
-                  currentValue: settings.shortcutAction,
-                  onSelected: (action) => settings.setShortcutAction(action),
-                );
-              },
-            ),
-
             const SizedBox(height: 32),
 
             // ── Langue ───────────────────────────────────────────────────────
@@ -330,45 +113,6 @@ class SettingsPage extends ConsumerWidget {
 
             const SizedBox(height: 32),
 
-            // ── Voix ─────────────────────────────────────────────────────────
-            _SectionTitle(theme: theme, label: voiceSection),
-            const SizedBox(height: 14),
-            SettingsTile(
-              icon: CupertinoIcons.mic,
-              title: engineLabel,
-              subtitle: settings.voiceEngine == 'local'
-                  ? settings.translate('local_device')
-                  : settings.translate('server'),
-              segmentedValues: [
-                settings.translate('local_device'),
-                settings.translate('server'),
-              ],
-              selectedSegmentIndex: settings.voiceEngine == 'local' ? 0 : 1,
-              onSegmentChanged: (idx) {
-                settings.setVoiceEngine(idx == 0 ? 'local' : 'server');
-              },
-              note: settings.translate('voice_note'),
-            ),
-
-            const SizedBox(height: 32),
-
-            _SectionTitle(theme: theme, label: 'Backend'),
-            const SizedBox(height: 14),
-            SettingsTile(
-              icon: CupertinoIcons.cloud,
-              title: 'ChatIA API',
-              subtitle: getBackendSubtitle(),
-              trailing: backendConfig.hasError
-                  ? CupertinoIcons.exclamationmark_triangle
-                  : backendConfig.isLoading
-                  ? CupertinoIcons.clock
-                  : CupertinoIcons.checkmark_seal,
-              onTap: () => ref.invalidate(chatiaConfigProvider),
-              note: 'Touchez pour relancer /api/config.',
-            ),
-
-            const SizedBox(height: 32),
-
             // ── Profil ────────────────────────────────────────────────────────
             _SectionTitle(theme: theme, label: profileSection),
             const SizedBox(height: 14),
@@ -377,9 +121,7 @@ class SettingsPage extends ConsumerWidget {
                 children: [
                   CircleAvatar(
                     radius: 32,
-                    backgroundColor: isDark
-                        ? AppThemeColors.pillSelected
-                        : AppThemeColors.pill,
+                    backgroundColor: AppThemeColors.pill,
                     child: Text(
                       (user?.userName ?? 'U').substring(0, 1).toUpperCase(),
                       style: theme.textTheme.titleLarge?.copyWith(
@@ -439,7 +181,7 @@ class SettingsPage extends ConsumerWidget {
                   SizedBox(
                     width: double.infinity,
                     height: 44,
-                    child: FilledButton(
+                    child: OutlinedButton(
                       onPressed: () async {
                         try {
                           final api = ref.read(chatiaApiProvider);
@@ -447,18 +189,53 @@ class SettingsPage extends ConsumerWidget {
                         } catch (_) {}
                         await ref.read(authControllerProvider).signOut();
                       },
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFFFBECEB),
-                        foregroundColor: const Color(0xFF8E2A22),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: AppThemeColors.card,
+                        side: BorderSide(
+                          color: AppThemeColors.stroke,
+                          width: 1,
+                        ),
                         padding: EdgeInsets.zero,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        textStyle: theme.textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: Text(signOutLabel),
+                      child: Text(
+                        signOutLabel,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppThemeColors.textStrong,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 36),
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset(
+                    'assets/icons/congo_logo.png',
+                    height: 70,
+                    fit: BoxFit.contain,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Ministère des Postes, des Télécommunications\net de l\'Économie Numérique',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: AppThemeColors.textSoft,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'République du Congo',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppThemeColors.textMuted,
                     ),
                   ),
                 ],
@@ -505,9 +282,7 @@ class _ThemeSegmentTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isDark
-            ? Colors.black.withValues(alpha: 0.24)
-            : AppThemeColors.card.withValues(alpha: 0.96),
+        color: AppThemeColors.card,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppThemeColors.stroke),
       ),
@@ -520,9 +295,7 @@ class _ThemeSegmentTile extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: isDark
-                      ? AppThemeColors.pillSelected
-                      : AppThemeColors.pill,
+                  color: AppThemeColors.pill,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
@@ -581,7 +354,9 @@ class _ThemeSegmentTile extends StatelessWidget {
                         boxShadow: isSelected && !isDark
                             ? [
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.06),
+                                  color: AppThemeColors.textStrong.withValues(
+                                    alpha: 0.06,
+                                  ),
                                   blurRadius: 4,
                                   offset: const Offset(0, 2),
                                 ),
@@ -595,7 +370,9 @@ class _ThemeSegmentTile extends StatelessWidget {
                             icons[i],
                             size: 14,
                             color: isSelected
-                                ? AppThemeColors.accent
+                                ? (isDark
+                                      ? Colors.black
+                                      : AppThemeColors.textStrong)
                                 : AppThemeColors.textSoft,
                           ),
                           const SizedBox(width: 6),
@@ -606,7 +383,9 @@ class _ThemeSegmentTile extends StatelessWidget {
                                   ? FontWeight.w600
                                   : FontWeight.w400,
                               color: isSelected
-                                  ? AppThemeColors.accent
+                                  ? (isDark
+                                        ? Colors.black
+                                        : AppThemeColors.textStrong)
                                   : AppThemeColors.textSoft,
                             ),
                           ),
@@ -645,9 +424,7 @@ class _LanguageDropdownTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
-        color: isDark
-            ? Colors.black.withValues(alpha: 0.24)
-            : AppThemeColors.card.withValues(alpha: 0.96),
+        color: AppThemeColors.card,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppThemeColors.stroke),
       ),
@@ -658,7 +435,7 @@ class _LanguageDropdownTile extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: isDark ? AppThemeColors.pillSelected : AppThemeColors.pill,
+              color: AppThemeColors.pill,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
@@ -758,26 +535,24 @@ class _SettingsHeaderBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: isDark
-            ? AppThemeColors.card
-            : AppThemeColors.card.withValues(alpha: 0.96),
+    final button = Material(
+      color: AppThemeColors.card,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
         borderRadius: BorderRadius.circular(22),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-          onTap: onTap,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(icon, size: 20, color: AppThemeColors.textStrong),
-          ),
+        onTap: onTap,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(icon, size: 20, color: AppThemeColors.textStrong),
         ),
       ),
     );
+
+    if (tooltip.isEmpty) {
+      return button;
+    }
+
+    return Tooltip(message: tooltip, excludeFromSemantics: true, child: button);
   }
 }

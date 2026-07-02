@@ -2,27 +2,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shared/models/auth_session.dart';
 
-/// Interface du service d'authentification.
-///
-/// Sur le Web, [signInWithSso] retourne [null] car la session est créée
-/// après le retour du navigateur depuis Keycloak, via [handleOAuthCallback].
 abstract class AuthService {
-  /// Restaure une session persistée.
   Future<AuthSession?> restoreSession();
 
-  /// Lance le flux SSO.
-  ///
-  /// - Retourne une [AuthSession] en mode maquette ou mobile.
-  /// - Retourne [null] sur le Web (redirection navigateur ou popup initiée).
-  Future<AuthSession?> signInWithSso({bool usePopup = false});
+  Future<AuthSession> signIn({
+    required String email,
+    required String password,
+  });
 
-  /// Traite le callback OAuth2 (échange code → tokens).
-  ///
-  /// Appelé depuis [OAuthCallbackPage] avec le `code` et le `state`
-  /// extraits des paramètres de l'URL de retour.
-  Future<AuthSession> handleOAuthCallback(String code, String state);
+  Future<String> register({
+    required String name,
+    required String username,
+    required String email,
+    required String password,
+    required String confirmPassword,
+  });
 
-  /// Déconnecte l'utilisateur et efface la session stockée.
   Future<void> signOut({String? idTokenHint});
 }
 

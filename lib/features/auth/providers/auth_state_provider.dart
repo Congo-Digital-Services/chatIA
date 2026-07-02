@@ -30,6 +30,7 @@ class AuthController extends ChangeNotifier {
   bool isLoading = false;
   bool isRestoring = true;
   String? errorMessage;
+  String? infoMessage;
 
   bool get isAuthenticated => session != null;
 
@@ -38,6 +39,7 @@ class AuthController extends ChangeNotifier {
     try {
       isRestoring = true;
       errorMessage = null;
+      infoMessage = null;
       notifyListeners();
 
       if (kDebugMode && _resetAuthOnStart) {
@@ -93,24 +95,21 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  // ── Lancement du flux SSO ─────────────────────────────────────────────────
-  /// Sur le Web, cette méthode redirige le navigateur et retourne sans session.
-  /// La session sera définie via [handleOAuthCallback] après le retour.
-  Future<void> signInWithSso() async {
+  Future<void> signIn({
+    required String email,
+    required String password,
+  }) async {
     if (isLoading) return;
 
     try {
       isLoading = true;
       errorMessage = null;
+      infoMessage = null;
       notifyListeners();
 
-      // Le flux par redirection complète est plus robuste que la popup:
-      // pas de blocage navigateur et pas de dépendance au postMessage.
-      final result = await _service.signInWithSso(usePopup: false);
-      if (result != null) {
-        session = result;
-        _libreChatSession.hydrateSession(result);
-      }
+      final result = await _service.signIn(email: email, password: password);
+      session = result;
+      _libreChatSession.hydrateSession(result);
     } catch (error) {
       errorMessage = error.toString().replaceFirst('Exception: ', '');
     } finally {
@@ -120,20 +119,40 @@ class AuthController extends ChangeNotifier {
   }
 
   void setErrorMessage(String message) {
+    infoMessage = null;
     errorMessage = message;
     notifyListeners();
   }
 
-  // ── Traitement du callback OAuth2 ─────────────────────────────────────────
-  /// Appelé par [OAuthCallbackPage] après le retour depuis Keycloak.
-  Future<void> handleOAuthCallback(String code, String state) async {
+  void clearMessages() {
+    errorMessage = null;
+    infoMessage = null;
+    notifyListeners();
+  }
+
+  Future<void> register({
+    required String name,
+    required String username,
+    required String email,
+    required String password,
+    required String confirmPassword,
+  }) async {
+    if (isLoading) return;
+
     try {
       isLoading = true;
       errorMessage = null;
+      infoMessage = null;
       notifyListeners();
 
-      session = await _service.handleOAuthCallback(code, state);
-      _libreChatSession.hydrateSession(session);
+      final message = await _service.register(
+        name: name,
+        username: username,
+        email: email,
+        password: password,
+        confirmPassword: confirmPassword,
+      );
+      infoMessage = message;
     } catch (error) {
       errorMessage = error.toString().replaceFirst('Exception: ', '');
     } finally {
@@ -145,6 +164,7 @@ class AuthController extends ChangeNotifier {
   Future<void> setSession(AuthSession newSession) async {
     session = newSession;
     errorMessage = null;
+    infoMessage = null;
     _libreChatSession.hydrateSession(newSession);
     await _storage.saveSession(newSession);
     notifyListeners();
@@ -152,6 +172,7 @@ class AuthController extends ChangeNotifier {
 
   Future<void> clearSession() async {
     session = null;
+    infoMessage = null;
     _libreChatSession.hydrateSession(null);
     await _storage.clear();
     notifyListeners();
