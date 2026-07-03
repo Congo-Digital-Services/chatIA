@@ -182,7 +182,9 @@ class SettingsPage extends ConsumerWidget {
                     width: double.infinity,
                     height: 44,
                     child: OutlinedButton(
-                      onPressed: () async {
+                      onPressed: auth.isLoading
+                          ? null
+                          : () async {
                         try {
                           final api = ref.read(chatiaApiProvider);
                           if (api.isAvailable) await api.logout();
@@ -200,12 +202,30 @@ class SettingsPage extends ConsumerWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: Text(
-                        signOutLabel,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: AppThemeColors.textStrong,
-                        ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (auth.isLoading) ...[
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  AppThemeColors.textStrong,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                          ],
+                          Text(
+                            auth.isLoading ? 'Déconnexion…' : signOutLabel,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: AppThemeColors.textStrong,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

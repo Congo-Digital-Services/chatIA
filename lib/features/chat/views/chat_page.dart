@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../features/auth/providers/auth_state_provider.dart';
 import '../../../shared/models/conversation.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/conduit_card.dart';
 import '../../../shared/widgets/conversation_drawer.dart';
 import '../providers/chat_state_provider.dart';
@@ -27,6 +28,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   String? _lastConversationId;
   int _lastMessageCount = 0;
   ProviderSubscription<AuthController>? _authSubscription;
+  ProviderSubscription<ChatController>? _chatSubscription;
+  String? _lastChatErrorToast;
+  String? _lastChatInfoToast;
 
   @override
   void initState() {
@@ -48,6 +52,38 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         }
       },
     );
+    _chatSubscription = ref.listenManual<ChatController>(
+      chatControllerProvider,
+      (_, next) {
+        final hasNewError =
+            next.errorMessage != null &&
+            next.errorMessage!.isNotEmpty &&
+            _lastChatErrorToast != next.errorMessage;
+        if (hasNewError && mounted) {
+          _lastChatErrorToast = next.errorMessage;
+          showAppToast(
+            context,
+            message: next.errorMessage!,
+            type: AppToastType.error,
+          );
+          next.clearTransientMessages();
+        }
+
+        final hasNewInfo =
+            next.infoMessage != null &&
+            next.infoMessage!.isNotEmpty &&
+            _lastChatInfoToast != next.infoMessage;
+        if (hasNewInfo && mounted) {
+          _lastChatInfoToast = next.infoMessage;
+          showAppToast(
+            context,
+            message: next.infoMessage!,
+            type: AppToastType.success,
+          );
+          next.clearTransientMessages();
+        }
+      },
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final chatController = ref.read(chatControllerProvider);
       chatController.resetForFreshStart();
@@ -58,6 +94,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   @override
   void dispose() {
     _authSubscription?.close();
+    _chatSubscription?.close();
     _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     super.dispose();
@@ -91,6 +128,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final conversation = chat.selectedConversation;
     final messages = conversation.messages;
     final theme = Theme.of(context);
+
+    if (chat.errorMessage == null) {
+      _lastChatErrorToast = null;
+    }
+    if (chat.infoMessage == null) {
+      _lastChatInfoToast = null;
+    }
 
     final isNote = conversation.type == ConversationType.note;
 
@@ -153,6 +197,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       ),
                     ],
                   ),
+                ),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  child: chat.isLoading
+                      ? const Padding(
+                          key: ValueKey('chat-loading-bar'),
+                          padding: EdgeInsets.fromLTRB(14, 0, 14, 12),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.all(Radius.circular(99)),
+                            child: LinearProgressIndicator(minHeight: 4),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
                 ),
                 // ── Corps ────────────────────────────────────────────────────────
                 Expanded(
@@ -328,6 +385,7 @@ class _ConversationErrorState extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final chat = ref.watch(chatControllerProvider);
 
     return Center(
       child: Padding(
@@ -356,10 +414,20 @@ class _ConversationErrorState extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: () {
-                ref.read(chatControllerProvider).retrySelectedConversation();
-              },
-              child: const Text('Réessayer'),
+              onPressed: chat.isSelectedConversationLoading
+                  ? null
+                  : () {
+                      ref
+                          .read(chatControllerProvider)
+                          .retrySelectedConversation();
+                    },
+              child: chat.isSelectedConversationLoading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2.2),
+                    )
+                  : const Text('Réessayer'),
             ),
           ],
         ),

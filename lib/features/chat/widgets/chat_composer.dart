@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/audio_recorder.dart';
 import '../../../core/services/file_picker.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../providers/chat_state_provider.dart';
 
@@ -70,6 +71,8 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
   Future<void> _submit() async {
     final value = _controller.text.trim();
     if (value.isEmpty && _attachedFile == null) return;
+    final chat = ref.read(chatControllerProvider);
+    if (chat.isStreaming) return;
 
     _controller.clear();
 
@@ -97,11 +100,27 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
   }
 
   Future<void> _pickFile() async {
-    final info = await filePicker.pickFile();
-    if (info != null) {
-      setState(() {
-        _attachedFile = info;
-      });
+    try {
+      final info = await filePicker.pickFile();
+      if (info != null) {
+        setState(() {
+          _attachedFile = info;
+        });
+        if (mounted) {
+          showAppToast(
+            context,
+            message: 'Fichier prêt à être envoyé.',
+            type: AppToastType.info,
+          );
+        }
+      }
+    } catch (error) {
+      if (!mounted) return;
+      showAppToast(
+        context,
+        message: 'Impossible de joindre le fichier.',
+        type: AppToastType.error,
+      );
     }
   }
 
@@ -127,11 +146,20 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
   }
 
   Future<void> _startRecording() async {
-    await audioRecorder.startRecording();
-    setState(() {
-      _isRecording = true;
-    });
-    _startRecordingTimer();
+    try {
+      await audioRecorder.startRecording();
+      setState(() {
+        _isRecording = true;
+      });
+      _startRecordingTimer();
+    } catch (_) {
+      if (!mounted) return;
+      showAppToast(
+        context,
+        message: 'Impossible de démarrer l’enregistrement.',
+        type: AppToastType.error,
+      );
+    }
   }
 
   Future<void> _cancelRecording() async {
@@ -145,28 +173,44 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
 
   Future<void> _sendRecording() async {
     final durationText = _formatDuration(_recordDurationSeconds);
-    final audio = await audioRecorder.stopRecording();
-    _stopRecordingTimer();
-    setState(() {
-      _isRecording = false;
-      _recordDurationSeconds = 0;
-    });
-    if (audio != null) {
-      await ref
-          .read(chatControllerProvider)
-          .sendVoiceMessage(
-            audio.url,
-            durationText,
-            bytes: audio.bytes,
-            mimeType: audio.mimeType,
-            name: audio.name,
-          );
+    try {
+      final audio = await audioRecorder.stopRecording();
+      _stopRecordingTimer();
+      setState(() {
+        _isRecording = false;
+        _recordDurationSeconds = 0;
+      });
+      if (audio != null) {
+        await ref
+            .read(chatControllerProvider)
+            .sendVoiceMessage(
+              audio.url,
+              durationText,
+              bytes: audio.bytes,
+              mimeType: audio.mimeType,
+              name: audio.name,
+            );
+      }
+    } catch (_) {
+      _stopRecordingTimer();
+      setState(() {
+        _isRecording = false;
+        _recordDurationSeconds = 0;
+      });
+      if (!mounted) return;
+      showAppToast(
+        context,
+        message: 'Impossible d’envoyer le message vocal.',
+        type: AppToastType.error,
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final chat = ref.watch(chatControllerProvider);
+    final isBusy = chat.isStreaming;
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
       child: Column(
@@ -287,7 +331,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                           shape: const CircleBorder(),
                           child: InkWell(
                             customBorder: const CircleBorder(),
-                            onTap: _sendRecording,
+                          onTap: isBusy ? null : _sendRecording,
                             child: SizedBox(
                               width: 44,
                               height: 44,
@@ -317,7 +361,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                         ),
                         child: _ComposerIconBtn(
                           icon: CupertinoIcons.add,
-                          onTap: _pickFile,
+                          onTap: isBusy ? null : _pickFile,
                           tooltip: 'Joindre un fichier',
                         ),
                       ),
@@ -325,6 +369,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                       Expanded(
                         child: TextField(
                           controller: _controller,
+                          enabled: !isBusy,
                           minLines: 1,
                           maxLines: 5,
                           textInputAction: TextInputAction.newline,
@@ -365,7 +410,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                               ),
                               child: _ComposerIconBtn(
                                 icon: CupertinoIcons.mic,
-                                onTap: _startRecording,
+                                onTap: isBusy ? null : _startRecording,
                                 tooltip: 'Dicter',
                               ),
                             ),
@@ -382,7 +427,21 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                               bottom: 6,
                               top: 6,
                             ),
-                            child: _SendButton(onTap: _submit),
+                            child: _SendButton(
+                              onTap: isBusy ? null : _submit,
+                              isLoading: isBusy,
+                            ),
+                          ),
+                        ),
+                      if (isBusy &&
+                          _controller.text.trim().isEmpty &&
+                          _attachedFile == null)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 10, bottom: 6, top: 6),
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2.2),
                           ),
                         ),
                     ],
@@ -403,7 +462,7 @@ class _ComposerIconBtn extends StatelessWidget {
   });
 
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final String tooltip;
 
   @override
@@ -437,9 +496,10 @@ class _ComposerIconBtn extends StatelessWidget {
 
 // ─── Bouton Envoyer (flèche vers le haut, fond noir) ─────────────────────────
 class _SendButton extends StatelessWidget {
-  const _SendButton({required this.onTap});
+  const _SendButton({required this.onTap, this.isLoading = false});
 
   final VoidCallback? onTap;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -455,7 +515,18 @@ class _SendButton extends StatelessWidget {
         child: SizedBox(
           width: 44,
           height: 44,
-          child: Icon(CupertinoIcons.arrow_up, color: iconColor, size: 20),
+          child: Center(
+            child: isLoading
+                ? SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      valueColor: AlwaysStoppedAnimation<Color>(iconColor),
+                    ),
+                  )
+                : Icon(CupertinoIcons.arrow_up, color: iconColor, size: 20),
+          ),
         ),
       ),
     );

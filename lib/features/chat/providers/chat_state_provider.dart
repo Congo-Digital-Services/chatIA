@@ -35,6 +35,7 @@ class ChatController extends ChangeNotifier {
   StreamSubscription<ChatStreamEvent>? _activeStreamSubscription;
   String searchQuery = '';
   String? errorMessage;
+  String? infoMessage;
 
   List<Conversation> get conversations => List.unmodifiable(_conversations);
   Conversation get selectedConversation => _selectedConversation;
@@ -81,6 +82,7 @@ class ChatController extends ChangeNotifier {
     isLoading = false;
     isStreaming = false;
     errorMessage = null;
+    infoMessage = null;
     searchQuery = '';
     _selectedConversation = _createDraftConversation();
     notifyListeners();
@@ -94,6 +96,7 @@ class ChatController extends ChangeNotifier {
     try {
       isLoading = true;
       errorMessage = null;
+      infoMessage = null;
       _loadedConversationIds.clear();
       _loadingConversationIds.clear();
       _loadingMoreConversationIds.clear();
@@ -273,6 +276,7 @@ class ChatController extends ChangeNotifier {
         createConversation();
       }
     }
+    infoMessage = 'Conversation supprimée.';
     notifyListeners();
   }
 
@@ -300,6 +304,9 @@ class ChatController extends ChangeNotifier {
 
     try {
       await _apiService.deleteMessage(conversationId, messageId);
+      infoMessage = 'Message supprimé.';
+      errorMessage = null;
+      notifyListeners();
     } catch (error) {
       // En cas d'échec serveur, on restaure le message d'origine
       errorMessage = 'Impossible de supprimer le message : ${error.toString()}';
@@ -328,6 +335,9 @@ class ChatController extends ChangeNotifier {
         text: newText,
       );
       _updateMessage(messageId, (_) => updated);
+      infoMessage = 'Message modifié.';
+      errorMessage = null;
+      notifyListeners();
     } catch (error) {
       errorMessage = 'Impossible de modifier le message : ${error.toString()}';
       notifyListeners();
@@ -529,6 +539,7 @@ class ChatController extends ChangeNotifier {
 
     isStreaming = true;
     errorMessage = null;
+    infoMessage = null;
     notifyListeners();
 
     await _consumeChatStream(
@@ -756,6 +767,7 @@ class ChatController extends ChangeNotifier {
       );
     } catch (error) {
       errorMessage = error.toString();
+      infoMessage = null;
       _updateAssistantMessage(
         assistantId,
         'Erreur d\'upload : ${error.toString()}',
@@ -775,6 +787,7 @@ class ChatController extends ChangeNotifier {
     try {
       isStreaming = true;
       errorMessage = null;
+      infoMessage = null;
       notifyListeners();
 
       final transcript = await _apiService.transcribeSpeech(
@@ -800,6 +813,7 @@ class ChatController extends ChangeNotifier {
       );
     } catch (error) {
       errorMessage = error.toString();
+      infoMessage = null;
       _updateAssistantMessage(
         assistantId,
         'Erreur de transcription : ${error.toString()}',
@@ -867,7 +881,8 @@ class ChatController extends ChangeNotifier {
           }
 
           if (event.error != null && event.error!.isNotEmpty) {
-            errorMessage = event.error;
+      errorMessage = event.error;
+            infoMessage = null;
             _updateAssistantMessage(
               assistantId,
               '$errorPrefix : ${event.error}',
@@ -1082,6 +1097,7 @@ class ChatController extends ChangeNotifier {
       final message = error.toString();
       _conversationErrors[conversationId] = message;
       errorMessage = message;
+      infoMessage = null;
       if (reset) {
         _loadedConversationIds.remove(conversationId);
       }
@@ -1114,5 +1130,11 @@ class ChatController extends ChangeNotifier {
       }
       return conversation;
     }).toList();
+  }
+
+  void clearTransientMessages() {
+    errorMessage = null;
+    infoMessage = null;
+    notifyListeners();
   }
 }

@@ -8,6 +8,7 @@ import '../../../core/services/file_picker.dart';
 import '../../../shared/models/chat_message.dart';
 import '../../../shared/models/conversation.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../providers/chat_state_provider.dart';
 
 class MessageBubble extends ConsumerWidget {
@@ -69,11 +70,10 @@ class MessageBubble extends ConsumerWidget {
                 onTap: () {
                   Navigator.pop(ctx);
                   Clipboard.setData(ClipboardData(text: message.text));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Message copié'),
-                      duration: Duration(seconds: 2),
-                    ),
+                  showAppToast(
+                    context,
+                    message: 'Message copié.',
+                    type: AppToastType.success,
                   );
                 },
               ),
