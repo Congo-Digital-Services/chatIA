@@ -25,7 +25,7 @@ Exemple web :
 
 ```bash
 flutter run -d chrome \
-  --dart-define=CHATIA_API_BASE_URL=http://135.125.102.165:3081 \
+  --dart-define=CHATIA_API_BASE_URL=https://loba-ia.congo-digital.com \
   --dart-define=MOBILE_AUTH_EXCHANGE_KEY=change-me \
   --dart-define=KEYCLOAK_BASE_URL=https://auth.congo-digital.com \
   --dart-define=KEYCLOAK_REALM=OpenWebUI \
@@ -44,7 +44,7 @@ Exemple de fichier `.env.json` :
 
 ```json
 {
-  "CHATIA_API_BASE_URL": "http://135.125.102.165:3081",
+  "CHATIA_API_BASE_URL": "https://loba-ia.congo-digital.com",
   "MOBILE_AUTH_EXCHANGE_KEY": "change-me",
   "KEYCLOAK_BASE_URL": "https://auth.congo-digital.com",
   "KEYCLOAK_REALM": "OpenWebUI",

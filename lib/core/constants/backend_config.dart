@@ -3,7 +3,7 @@ class BackendConfig {
 
   static const baseUrl = String.fromEnvironment(
     'CHATIA_API_BASE_URL',
-    defaultValue: 'http://135.125.102.165:3081',
+    defaultValue: 'https://loba-ia.congo-digital.com',
   );
 
   static const mobileAuthExchangeKey = String.fromEnvironment(

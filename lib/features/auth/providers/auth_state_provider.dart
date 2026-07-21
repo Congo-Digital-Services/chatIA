@@ -95,10 +95,7 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  Future<void> signIn({
-    required String email,
-    required String password,
-  }) async {
+  Future<void> signIn({required String email, required String password}) async {
     if (isLoading) return;
 
     try {
@@ -110,7 +107,15 @@ class AuthController extends ChangeNotifier {
       final result = await _service.signIn(email: email, password: password);
       session = result;
       _libreChatSession.hydrateSession(result);
+      if (kDebugMode) {
+        debugPrint(
+          '[AuthController][signIn] success user=${result.userName} email=${result.email}',
+        );
+      }
     } catch (error) {
+      if (kDebugMode) {
+        debugPrint('[AuthController][signIn] error=$error');
+      }
       errorMessage = error.toString().replaceFirst('Exception: ', '');
     } finally {
       isLoading = false;

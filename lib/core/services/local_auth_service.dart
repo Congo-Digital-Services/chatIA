@@ -14,6 +14,13 @@ class LocalAuthService implements AuthService {
   final TokenStorageService storage;
   final http.Client Function() clientFactory;
 
+  void _logAuthDebug(String context, String message) {
+    if (!kDebugMode) {
+      return;
+    }
+    debugPrint('[Auth][$context] $message');
+  }
+
   @override
   Future<AuthSession?> restoreSession() => storage.readSession();
 
@@ -23,9 +30,12 @@ class LocalAuthService implements AuthService {
     required String password,
   }) async {
     final client = clientFactory();
+    final uri = Uri.parse('${BackendConfig.baseUrl}/api/auth/login');
     try {
+      _logAuthDebug('signIn', 'url=$uri');
+      _logAuthDebug('signIn', 'email=$email');
       final response = await client.post(
-        Uri.parse('${BackendConfig.baseUrl}/api/auth/login'),
+        uri,
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
@@ -33,6 +43,9 @@ class LocalAuthService implements AuthService {
         },
         body: jsonEncode({'email': email, 'password': password}),
       );
+
+      _logAuthDebug('signIn', 'status=${response.statusCode}');
+      _logAuthDebug('signIn', 'body=${response.body}');
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw Exception(_buildSignInErrorMessage(response));
@@ -69,7 +82,15 @@ class LocalAuthService implements AuthService {
       );
 
       await storage.saveSession(session);
+      _logAuthDebug(
+        'signIn',
+        'login success user=${session.userName} email=${session.email}',
+      );
       return session;
+    } catch (error, stackTrace) {
+      _logAuthDebug('signIn', 'error=$error');
+      _logAuthDebug('signIn', 'stackTrace=$stackTrace');
+      rethrow;
     } finally {
       client.close();
     }

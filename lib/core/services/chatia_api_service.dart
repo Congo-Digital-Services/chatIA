@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
+import 'package:mime/mime.dart';
 
 import '../constants/backend_config.dart';
 import 'jwt_debug_helper.dart';
@@ -27,11 +29,24 @@ class ChatiaApiService {
   ChatiaApiService({required this.baseUrl, required this.sessionService});
 
   static const agentsEndpoint = 'agents';
+  static const uploadsEndpoint = 'openAI';
+  static const _sseRetryableStatusCodes = {404};
+  static const _sseMaxConnectionAttempts = 5;
 
   final String baseUrl;
   final LibreChatSessionService sessionService;
 
   bool get isAvailable => sessionService.currentSession != null;
+
+  String? _authCookieHeader() {
+    final refreshToken = sessionService.currentSession?.refreshToken;
+    if (refreshToken == null ||
+        refreshToken.isEmpty ||
+        refreshToken == 'cookie') {
+      return null;
+    }
+    return 'token_provider=librechat; refreshToken=$refreshToken';
+  }
 
   Map<String, String> _baseHeaders([String? accessToken]) {
     final headers = <String, String>{'Accept': 'application/json'};
@@ -40,6 +55,10 @@ class ChatiaApiService {
     }
     if (accessToken != null && accessToken.isNotEmpty) {
       headers['Authorization'] = 'Bearer $accessToken';
+    }
+    final authCookie = _authCookieHeader();
+    if (authCookie != null) {
+      headers['Cookie'] = authCookie;
     }
     return headers;
   }
@@ -458,7 +477,7 @@ class ChatiaApiService {
     required String tempFileId,
     required int width,
     required int height,
-    String endpoint = agentsEndpoint,
+    String endpoint = uploadsEndpoint,
   }) async {
     if (width <= 0 || height <= 0) {
       throw Exception('Dimensions image manquantes pour le backend ChatIA.');
@@ -484,7 +503,7 @@ class ChatiaApiService {
     required List<int> bytes,
     required String filename,
     required String tempFileId,
-    String endpoint = agentsEndpoint,
+    String endpoint = uploadsEndpoint,
   }) async {
     final data = await _sendMultipartJson(
       path: '/api/files',
@@ -530,16 +549,40 @@ class ChatiaApiService {
       throw Exception('Fichier vide ou non lisible.');
     }
 
+    final uri = _uri(path);
+    _logAuthDebug('POST $path');
+    _logRequestDebug('POST $path', uri);
+    _logFullDebug(
+      'POST $path multipart',
+      jsonEncode({
+        'fileField': fileField,
+        'filename': filename,
+        'bytesLength': bytes.length,
+        'fields': fields,
+      }),
+    );
+
     final streamedResponse = await sessionService.sendAuthorized((accessToken) {
-      final request = http.MultipartRequest('POST', _uri(path));
+      final request = http.MultipartRequest('POST', uri);
       request.headers.addAll(_baseHeaders(accessToken));
       request.fields.addAll(fields);
+      final contentType = _mediaTypeFromFilename(filename);
       request.files.add(
-        http.MultipartFile.fromBytes(fileField, bytes, filename: filename),
+        http.MultipartFile.fromBytes(
+          fileField,
+          bytes,
+          filename: filename,
+          contentType: contentType,
+        ),
       );
       return request;
     });
     final response = await http.Response.fromStream(streamedResponse);
+
+    if (kDebugMode) {
+      debugPrint('[ChatIA][POST $path] status=${response.statusCode}');
+    }
+    _logFullDebug('POST $path response', response.body);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
@@ -553,6 +596,20 @@ class ChatiaApiService {
     }
 
     return decoded;
+  }
+
+  MediaType? _mediaTypeFromFilename(String filename) {
+    final mimeType = lookupMimeType(filename);
+    if (mimeType == null || !mimeType.contains('/')) {
+      return null;
+    }
+
+    final parts = mimeType.split('/');
+    if (parts.length != 2) {
+      return null;
+    }
+
+    return MediaType(parts[0], parts[1]);
   }
 
   Stream<ChatStreamEvent> streamChat(
@@ -575,23 +632,48 @@ class ChatiaApiService {
         if (resume) 'resume': 'true',
       });
       _logRequestDebug('GET /api/agents/chat/stream/$streamId', uri);
-      connection = await sessionService.openAuthorizedStream((accessToken) {
-        final request = http.Request('GET', uri);
-        request.headers.addAll(_baseHeaders(accessToken));
-        request.headers['Accept'] = 'text/event-stream';
-        return request;
-      });
-      final response = connection!.response;
-      if (response.statusCode != 200) {
+      http.StreamedResponse? response;
+
+      for (var attempt = 1; attempt <= _sseMaxConnectionAttempts; attempt++) {
+        connection = await sessionService.openAuthorizedStream((accessToken) {
+          final request = http.Request('GET', uri);
+          request.headers.addAll(_baseHeaders(accessToken));
+          request.headers['Accept'] = 'text/event-stream';
+          return request;
+        });
+        response = connection!.response;
+        if (response.statusCode == 200) {
+          break;
+        }
+
+        final shouldRetry =
+            _sseRetryableStatusCodes.contains(response.statusCode) &&
+            attempt < _sseMaxConnectionAttempts;
         await connection!.close();
+        connection = null;
+        if (!shouldRetry) {
+          controller.addError(
+            Exception(
+              'Échec de connexion au flux SSE : ${response.statusCode}',
+            ),
+          );
+          await controller.close();
+          return;
+        }
+
+        await Future<void>.delayed(Duration(milliseconds: attempt * 250));
+      }
+
+      final currentResponse = response;
+      if (currentResponse == null) {
         controller.addError(
-          Exception('Échec de connexion au flux SSE : ${response.statusCode}'),
+          Exception('Échec de connexion au flux SSE : aucune réponse'),
         );
         await controller.close();
         return;
       }
 
-      final decoded = response.stream
+      final decoded = currentResponse.stream
           .transform(utf8.decoder)
           .transform(const LineSplitter());
       final blockLines = <String>[];

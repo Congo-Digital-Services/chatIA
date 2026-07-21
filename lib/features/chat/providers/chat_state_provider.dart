@@ -677,12 +677,19 @@ class ChatController extends ChangeNotifier {
       return Future.value();
     }
 
-    return _transcribeVoiceMessage(
+    return _uploadAttachedFile(
       assistantId: assistantId,
       userMessageId: userMessage.id,
+      promptText: 'Analyse ce message vocal.',
       bytes: bytes,
       filename: name ?? 'voice-message.webm',
-      durationText: durationText,
+      size: durationText,
+      isImage: false,
+      mimeType: mimeType,
+      errorPrefix: 'Erreur analyse audio',
+      uploadErrorLabel: 'Erreur d\'upload audio',
+      fallbackToTranscription: true,
+      fallbackDurationText: durationText,
     );
   }
 
@@ -694,6 +701,11 @@ class ChatController extends ChangeNotifier {
     required String filename,
     required String size,
     required bool isImage,
+    String? mimeType,
+    String errorPrefix = 'Erreur analyse fichier',
+    String uploadErrorLabel = 'Erreur d\'upload',
+    bool fallbackToTranscription = false,
+    String? fallbackDurationText,
     int? width,
     int? height,
   }) async {
@@ -704,21 +716,24 @@ class ChatController extends ChangeNotifier {
 
       // ── 1. Upload du fichier ────────────────────────────────────────────────
       final tempFileId = _uuidV4();
-      final uploaded = isImage && width != null && height != null
-          ? await _apiService.uploadImageFile(
-              bytes: bytes,
-              filename: filename,
-              tempFileId: tempFileId,
-              width: width,
-              height: height,
-              endpoint: ChatiaApiService.agentsEndpoint,
-            )
-          : await _apiService.uploadMessageFile(
-              bytes: bytes,
-              filename: filename,
-              tempFileId: tempFileId,
-              endpoint: ChatiaApiService.agentsEndpoint,
-            );
+      UploadedFileInfo uploaded;
+      if (isImage && width != null && height != null) {
+        uploaded = await _apiService.uploadImageFile(
+          bytes: bytes,
+          filename: filename,
+          tempFileId: tempFileId,
+          width: width,
+          height: height,
+          endpoint: ChatiaApiService.uploadsEndpoint,
+        );
+      } else {
+        uploaded = await _apiService.uploadMessageFile(
+          bytes: bytes,
+          filename: filename,
+          tempFileId: tempFileId,
+          endpoint: ChatiaApiService.uploadsEndpoint,
+        );
+      }
 
       // Mettre à jour le message local avec l'URL backend
       if (uploaded.url.isNotEmpty) {
@@ -738,16 +753,15 @@ class ChatController extends ChangeNotifier {
       final parentMessageId = _parentMessageId(_selectedConversation);
       final chatMessageId = _uuidV4();
 
-      // Construction du payload fichier pour LibreChat
+      // Aligner le payload `files` sur celui observe dans le client web.
       final filePayload = <String, dynamic>{
         'file_id': uploaded.fileId.isNotEmpty ? uploaded.fileId : tempFileId,
-        'temp_file_id': tempFileId,
         'type': uploaded.type.isNotEmpty
             ? uploaded.type
-            : (isImage ? 'image/jpeg' : 'application/octet-stream'),
+            : (mimeType?.trim().isNotEmpty == true
+                  ? mimeType!.trim()
+                  : (isImage ? 'image/jpeg' : 'application/octet-stream')),
         'filepath': uploaded.filepath,
-        'filename': filename,
-        'source': uploaded.source.isNotEmpty ? uploaded.source : 'local',
         if (uploaded.width != null) 'width': uploaded.width,
         if (uploaded.height != null) 'height': uploaded.height,
       };
@@ -763,14 +777,25 @@ class ChatController extends ChangeNotifier {
           text: promptText,
           files: [filePayload],
         ),
-        errorPrefix: 'Erreur analyse image',
+        errorPrefix: errorPrefix,
       );
     } catch (error) {
+      if (fallbackToTranscription) {
+        await _transcribeVoiceMessage(
+          assistantId: assistantId,
+          userMessageId: userMessageId,
+          bytes: bytes,
+          filename: filename,
+          durationText: fallbackDurationText ?? size,
+        );
+        return;
+      }
+
       errorMessage = error.toString();
       infoMessage = null;
       _updateAssistantMessage(
         assistantId,
-        'Erreur d\'upload : ${error.toString()}',
+        '$uploadErrorLabel : ${error.toString()}',
       );
       isStreaming = false;
       notifyListeners();
@@ -881,7 +906,7 @@ class ChatController extends ChangeNotifier {
           }
 
           if (event.error != null && event.error!.isNotEmpty) {
-      errorMessage = event.error;
+            errorMessage = event.error;
             infoMessage = null;
             _updateAssistantMessage(
               assistantId,
@@ -1073,7 +1098,9 @@ class ChatController extends ChangeNotifier {
           ? previous.subtitle
           : details.subtitle;
       final mergedMessages = reset
-          ? (page?.messages.isNotEmpty == true ? page!.messages : details.messages)
+          ? (page?.messages.isNotEmpty == true
+                ? page!.messages
+                : details.messages)
           : <ChatMessage>[
               ...previous.messages,
               ...(page?.messages ?? const <ChatMessage>[]).where(
