@@ -29,6 +29,7 @@ class LibreChatApiService {
   LibreChatApiService({required this.baseUrl, required this.sessionService});
 
   static const defaultOpenAiModel = 'gpt-4';
+  static const agentsEndpoint = 'agents';
   static const _sseRetryableStatusCodes = {404};
   static const _sseMaxConnectionAttempts = 5;
 
@@ -508,7 +509,8 @@ class LibreChatApiService {
     required String tempFileId,
     required int width,
     required int height,
-    String endpoint = 'openAI',
+    String endpoint = agentsEndpoint,
+    String endpointType = agentsEndpoint,
   }) async {
     if (width <= 0 || height <= 0) {
       throw Exception('Dimensions image manquantes pour LibreChat.');
@@ -521,6 +523,7 @@ class LibreChatApiService {
       filename: filename,
       fields: {
         'endpoint': endpoint,
+        'endpointType': endpointType,
         'file_id': tempFileId,
         'width': '$width',
         'height': '$height',
@@ -534,7 +537,8 @@ class LibreChatApiService {
     required List<int> bytes,
     required String filename,
     required String tempFileId,
-    String endpoint = 'openAI',
+    String endpoint = agentsEndpoint,
+    String endpointType = agentsEndpoint,
   }) async {
     final data = await _sendMultipartJson(
       path: '/api/files',
@@ -543,6 +547,7 @@ class LibreChatApiService {
       filename: filename,
       fields: {
         'endpoint': endpoint,
+        'endpointType': endpointType,
         'file_id': tempFileId,
         'message_file': 'true',
       },
@@ -603,12 +608,67 @@ class LibreChatApiService {
       );
     }
 
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, dynamic>) {
-      throw Exception('Réponse API inattendue pour $path.');
+    final normalizedBody = response.body.trim();
+    final sseError = _extractSseErrorMessage(normalizedBody);
+    if (sseError != null) {
+      throw Exception('Echec API $path : $sseError');
+    }
+
+    final decoded = _tryDecodeJsonMap(normalizedBody);
+    if (decoded == null) {
+      throw Exception('Réponse API inattendue pour $path : $normalizedBody');
     }
 
     return decoded;
+  }
+
+  Map<String, dynamic>? _tryDecodeJsonMap(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      if (decoded is Map) {
+        return Map<String, dynamic>.from(decoded);
+      }
+    } catch (_) {
+      // Handled by caller.
+    }
+    return null;
+  }
+
+  String? _extractSseErrorMessage(String body) {
+    if (!body.startsWith('event:')) {
+      return null;
+    }
+
+    final lines = const LineSplitter().convert(body);
+    String? eventName;
+    final dataLines = <String>[];
+
+    for (final line in lines) {
+      if (line.startsWith('event:')) {
+        eventName = line.substring(6).trim();
+        continue;
+      }
+      if (line.startsWith('data:')) {
+        dataLines.add(line.substring(5).trim());
+      }
+    }
+
+    if (eventName != 'error' && eventName != 'message') {
+      return body;
+    }
+
+    final rawData = dataLines.join('\n').trim();
+    final payload = _tryDecodeJsonMap(rawData);
+    if (payload == null) {
+      return rawData.isNotEmpty ? rawData : body;
+    }
+
+    return payload['error']?.toString() ??
+        payload['message']?.toString() ??
+        rawData;
   }
 
   MediaType? _mediaTypeFromFilename(String filename) {
@@ -796,6 +856,7 @@ class LibreChatApiService {
       subtitle: subtitle,
       folder: folder,
       isPinned: false,
+      agentId: json['agent_id']?.toString(),
       heroAssetLabel: null,
       type: type == 'note'
           ? ConversationType.note

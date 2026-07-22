@@ -477,7 +477,8 @@ class ChatiaApiService {
     required String tempFileId,
     required int width,
     required int height,
-    String endpoint = uploadsEndpoint,
+    String endpoint = agentsEndpoint,
+    String endpointType = agentsEndpoint,
   }) async {
     if (width <= 0 || height <= 0) {
       throw Exception('Dimensions image manquantes pour le backend ChatIA.');
@@ -490,6 +491,7 @@ class ChatiaApiService {
       filename: filename,
       fields: {
         'endpoint': endpoint,
+        'endpointType': endpointType,
         'file_id': tempFileId,
         'width': '$width',
         'height': '$height',
@@ -503,7 +505,8 @@ class ChatiaApiService {
     required List<int> bytes,
     required String filename,
     required String tempFileId,
-    String endpoint = uploadsEndpoint,
+    String endpoint = agentsEndpoint,
+    String endpointType = agentsEndpoint,
   }) async {
     final data = await _sendMultipartJson(
       path: '/api/files',
@@ -512,6 +515,7 @@ class ChatiaApiService {
       filename: filename,
       fields: {
         'endpoint': endpoint,
+        'endpointType': endpointType,
         'file_id': tempFileId,
         'message_file': 'true',
       },
@@ -590,12 +594,67 @@ class ChatiaApiService {
       );
     }
 
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, dynamic>) {
-      throw Exception('Réponse API inattendue pour $path.');
+    final normalizedBody = response.body.trim();
+    final sseError = _extractSseErrorMessage(normalizedBody);
+    if (sseError != null) {
+      throw Exception('Echec API $path : $sseError');
+    }
+
+    final decoded = _tryDecodeJsonMap(normalizedBody);
+    if (decoded == null) {
+      throw Exception('Réponse API inattendue pour $path : $normalizedBody');
     }
 
     return decoded;
+  }
+
+  Map<String, dynamic>? _tryDecodeJsonMap(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      if (decoded is Map) {
+        return Map<String, dynamic>.from(decoded);
+      }
+    } catch (_) {
+      // Handled by caller.
+    }
+    return null;
+  }
+
+  String? _extractSseErrorMessage(String body) {
+    if (!body.startsWith('event:')) {
+      return null;
+    }
+
+    final lines = const LineSplitter().convert(body);
+    String? eventName;
+    final dataLines = <String>[];
+
+    for (final line in lines) {
+      if (line.startsWith('event:')) {
+        eventName = line.substring(6).trim();
+        continue;
+      }
+      if (line.startsWith('data:')) {
+        dataLines.add(line.substring(5).trim());
+      }
+    }
+
+    if (eventName != 'error' && eventName != 'message') {
+      return body;
+    }
+
+    final rawData = dataLines.join('\n').trim();
+    final payload = _tryDecodeJsonMap(rawData);
+    if (payload == null) {
+      return rawData.isNotEmpty ? rawData : body;
+    }
+
+    return payload['error']?.toString() ??
+        payload['message']?.toString() ??
+        rawData;
   }
 
   MediaType? _mediaTypeFromFilename(String filename) {
@@ -642,6 +701,11 @@ class ChatiaApiService {
           return request;
         });
         response = connection!.response;
+        if (kDebugMode) {
+          debugPrint(
+            '[ChatIA][GET /api/agents/chat/stream/$streamId] connect attempt=$attempt status=${response.statusCode}',
+          );
+        }
         if (response.statusCode == 200) {
           break;
         }
@@ -677,6 +741,7 @@ class ChatiaApiService {
           .transform(utf8.decoder)
           .transform(const LineSplitter());
       final blockLines = <String>[];
+      var receivedAnyLine = false;
 
       Future<void> terminate() async {
         await subscription?.cancel();
@@ -688,6 +753,12 @@ class ChatiaApiService {
 
       subscription = decoded.listen(
         (rawLine) {
+          receivedAnyLine = true;
+          if (kDebugMode) {
+            debugPrint(
+              '[ChatIA][GET /api/agents/chat/stream/$streamId raw] $rawLine',
+            );
+          }
           final line = rawLine.trimRight();
           if (line.isEmpty) {
             final event = _parseSseEventBlock(
@@ -708,10 +779,20 @@ class ChatiaApiService {
           blockLines.add(line);
         },
         onError: (error, stackTrace) {
+          if (kDebugMode) {
+            debugPrint(
+              '[ChatIA][GET /api/agents/chat/stream/$streamId] stream error=$error',
+            );
+          }
           controller.addError(error, stackTrace);
           terminate();
         },
         onDone: () async {
+          if (kDebugMode) {
+            debugPrint(
+              '[ChatIA][GET /api/agents/chat/stream/$streamId] stream done receivedAnyLine=$receivedAnyLine bufferedLines=${blockLines.length}',
+            );
+          }
           if (blockLines.isNotEmpty) {
             final event = _parseSseEventBlock(
               blockLines,
@@ -1038,6 +1119,14 @@ class ChatiaApiService {
       }
 
       final type = block['type']?.toString();
+      if (type == 'error') {
+        final directError = block['error']?.toString();
+        if (directError != null && directError.isNotEmpty) {
+          buffer.write(directError);
+        }
+        continue;
+      }
+
       if (type != null && type != 'text') {
         continue;
       }
@@ -1093,6 +1182,7 @@ class ChatiaApiService {
       subtitle: subtitle,
       folder: folder,
       isPinned: false,
+      agentId: json['agent_id']?.toString(),
       heroAssetLabel: null,
       type: type == 'note'
           ? ConversationType.note

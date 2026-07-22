@@ -349,13 +349,38 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Conversation _createDraftConversation() {
+  void _ensureConversationMatchesAgent(String agentId) {
+    if (agentId.isEmpty) {
+      return;
+    }
+
+    final currentAgentId = _selectedConversation.agentId?.trim();
+    final isDraft = _selectedConversation.id == _draftConversationId;
+    if (isDraft) {
+      if (currentAgentId == agentId) {
+        return;
+      }
+      _selectedConversation = _selectedConversation.copyWith(agentId: agentId);
+      notifyListeners();
+      return;
+    }
+
+    if (currentAgentId == null || currentAgentId.isEmpty || currentAgentId == agentId) {
+      return;
+    }
+
+    _selectedConversation = _createDraftConversation(agentId: agentId);
+    notifyListeners();
+  }
+
+  Conversation _createDraftConversation({String? agentId}) {
     return Conversation(
       id: _draftConversationId,
       title: 'Nouvelle conversation',
       subtitle: 'Commence un échange',
       folder: 'Chats',
       isPinned: false,
+      agentId: agentId,
       messages: const [],
     );
   }
@@ -522,6 +547,8 @@ class ChatController extends ChangeNotifier {
       return;
     }
 
+    _ensureConversationMatchesAgent(BackendConfig.chatAgentId);
+
     final parentMessageId = _parentMessageId(_selectedConversation);
     final conversationId = _serverConversationId(_selectedConversation.id);
     final userMessage = ChatMessage.user(id: _uuidV4(), text: trimmed);
@@ -565,6 +592,8 @@ class ChatController extends ChangeNotifier {
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty || agentId.isEmpty) return;
+
+    _ensureConversationMatchesAgent(agentId);
 
     final parentMessageId = _parentMessageId(_selectedConversation);
     final conversationId = _serverConversationId(_selectedConversation.id);
@@ -714,6 +743,8 @@ class ChatController extends ChangeNotifier {
       errorMessage = null;
       notifyListeners();
 
+      _ensureConversationMatchesAgent(BackendConfig.chatAgentId);
+
       // ── 1. Upload du fichier ────────────────────────────────────────────────
       final tempFileId = _uuidV4();
       UploadedFileInfo uploaded;
@@ -724,14 +755,16 @@ class ChatController extends ChangeNotifier {
           tempFileId: tempFileId,
           width: width,
           height: height,
-          endpoint: ChatiaApiService.uploadsEndpoint,
+          endpoint: ChatiaApiService.agentsEndpoint,
+          endpointType: ChatiaApiService.agentsEndpoint,
         );
       } else {
         uploaded = await _apiService.uploadMessageFile(
           bytes: bytes,
           filename: filename,
           tempFileId: tempFileId,
-          endpoint: ChatiaApiService.uploadsEndpoint,
+          endpoint: ChatiaApiService.agentsEndpoint,
+          endpointType: ChatiaApiService.agentsEndpoint,
         );
       }
 
@@ -888,6 +921,7 @@ class ChatController extends ChangeNotifier {
   }) async {
     final completer = Completer<void>();
     var accumulated = '';
+    String? finalConversationId;
 
     try {
       await _activeStreamSubscription?.cancel();
@@ -895,6 +929,7 @@ class ChatController extends ChangeNotifier {
         (event) {
           if (event.conversationId != null &&
               event.conversationId!.isNotEmpty) {
+            finalConversationId = event.conversationId!;
             _updateConversationId(
               _selectedConversation.id,
               event.conversationId!,
@@ -939,6 +974,10 @@ class ChatController extends ChangeNotifier {
       );
 
       await completer.future;
+
+      if (finalConversationId != null && finalConversationId!.isNotEmpty) {
+        await _loadConversationMessages(finalConversationId!, reset: true);
+      }
     } finally {
       await _activeStreamSubscription?.cancel();
       _activeStreamSubscription = null;

@@ -10,6 +10,7 @@ class Conversation {
     required this.folder,
     required this.isPinned,
     required this.messages,
+    this.agentId,
     this.heroAssetLabel,
     this.type = ConversationType.chat,
   });
@@ -20,6 +21,7 @@ class Conversation {
   final String folder;
   final bool isPinned;
   final String? heroAssetLabel;
+  final String? agentId;
   final List<ChatMessage> messages;
   final ConversationType type;
 
@@ -29,6 +31,7 @@ class Conversation {
     String? subtitle,
     String? folder,
     bool? isPinned,
+    String? agentId,
     String? heroAssetLabel,
     List<ChatMessage>? messages,
     ConversationType? type,
@@ -39,6 +42,7 @@ class Conversation {
       subtitle: subtitle ?? this.subtitle,
       folder: folder ?? this.folder,
       isPinned: isPinned ?? this.isPinned,
+      agentId: agentId ?? this.agentId,
       heroAssetLabel: heroAssetLabel ?? this.heroAssetLabel,
       messages: messages ?? this.messages,
       type: type ?? this.type,

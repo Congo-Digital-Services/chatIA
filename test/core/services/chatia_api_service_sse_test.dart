@@ -122,7 +122,8 @@ void main() {
 
           expect(multipart.method, 'POST');
           expect(multipart.url.path, '/api/files');
-          expect(multipart.fields['endpoint'], 'openAI');
+          expect(multipart.fields['endpoint'], 'agents');
+          expect(multipart.fields['endpointType'], 'agents');
           expect(multipart.fields['file_id'], 'temp-audio-1');
           expect(multipart.fields['message_file'], 'true');
           expect(multipart.files, hasLength(1));
@@ -169,7 +170,8 @@ void main() {
 
         expect(multipart.method, 'POST');
         expect(multipart.url.path, '/api/files/images');
-        expect(multipart.fields['endpoint'], 'openAI');
+        expect(multipart.fields['endpoint'], 'agents');
+        expect(multipart.fields['endpointType'], 'agents');
         expect(multipart.fields['file_id'], 'temp-image-1');
         expect(multipart.fields['width'], '3024');
         expect(multipart.fields['height'], '4032');
