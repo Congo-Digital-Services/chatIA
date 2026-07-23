@@ -19,12 +19,11 @@ class ConduitConversationDrawer extends ConsumerStatefulWidget {
 
 class _ConduitConversationDrawerState
     extends ConsumerState<ConduitConversationDrawer> {
-  final Map<String, bool> _expandedFolders = {};
-
   @override
   Widget build(BuildContext context) {
     final chat = ref.watch(chatControllerProvider);
     final auth = ref.watch(authControllerProvider);
+    final topInset = MediaQuery.of(context).viewPadding.top;
 
     // Nom affiché : session réelle ou fallback "Utilisateur"
     final displayName = auth.session?.userName ?? 'Utilisateur';
@@ -32,145 +31,151 @@ class _ConduitConversationDrawerState
 
     // Filtrer les conversations de type chat
     final pinned = chat.filter(chat.pinnedConversations);
-    final recent = chat.filter(chat.recentConversations);
     final theme = Theme.of(context);
 
     return Drawer(
-      backgroundColor: AppThemeColors.background,
+      backgroundColor: AppThemeColors.backgroundSoft,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
-          child: Column(
-            children: [
-              // ── Barre de recherche + Nouvelle conv ───────────────────────
-              Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: AppThemeColors.card,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppThemeColors.stroke),
-                      ),
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 12),
-                          Icon(
-                            CupertinoIcons.search,
-                            size: 16,
-                            color: AppThemeColors.textMuted,
+      child: MediaQuery.removePadding(
+        context: context,
+        removeTop: true,
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppThemeColors.backgroundSoft,
+            border: Border(right: BorderSide(color: AppThemeColors.stroke)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+            child: Column(
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(2, topInset + 10, 2, 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: AppThemeColors.surface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppThemeColors.stroke),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              onChanged: ref
-                                  .read(chatControllerProvider)
-                                  .updateSearch,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: AppThemeColors.textStrong,
+                          child: Row(
+                            children: [
+                              const SizedBox(width: 10),
+                              Icon(
+                                CupertinoIcons.search,
+                                size: 14,
+                                color: AppThemeColors.textMuted,
                               ),
-                              decoration: InputDecoration(
-                                hintText: 'Rechercher une conversation…',
-                                border: InputBorder.none,
-                                enabledBorder: InputBorder.none,
-                                focusedBorder: InputBorder.none,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  vertical: 0,
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: TextField(
+                                  onChanged: ref
+                                      .read(chatControllerProvider)
+                                      .updateSearch,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: AppThemeColors.textStrong,
+                                  ),
+                                  decoration: InputDecoration(
+                                    hintText: 'Rechercher',
+                                    border: InputBorder.none,
+                                    enabledBorder: InputBorder.none,
+                                    focusedBorder: InputBorder.none,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 0,
+                                    ),
+                                    hintStyle: theme.textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: AppThemeColors.textMuted,
+                                        ),
+                                    isDense: true,
+                                  ),
                                 ),
-                                hintStyle: theme.textTheme.bodySmall?.copyWith(
-                                  color: AppThemeColors.textMuted,
-                                ),
-                                isDense: true,
                               ),
-                            ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _DrawerIconBtn(
-                    icon: CupertinoIcons.square_pencil,
-                    tooltip: 'Nouvelle conversation',
-                    onTap: () {
-                      ref.read(chatControllerProvider).createConversation();
-                      Navigator.of(context).maybePop();
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-
-              // ── Contenu Chats ────────────────────────────────────────────
-              Expanded(
-                child: _ChatsContent(
-                  pinned: pinned,
-                  recent: recent,
-                  expandedFolders: _expandedFolders,
-                  onFolderToggle: (folder) => setState(() {
-                    final current = _expandedFolders[folder] ?? false;
-                    _expandedFolders[folder] = !current;
-                  }),
-                ),
-              ),
-
-              // ── Profil ───────────────────────────────────────────────────
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppThemeColors.card,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppThemeColors.stroke),
-                  boxShadow: AppThemeShadows.soft,
-                ),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: AppThemeColors.pill,
-                      child: Text(
-                        displayName.substring(0, 1).toUpperCase(),
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: AppThemeColors.textStrong,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            displayName,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                      const SizedBox(width: 8),
+                      _DrawerIconBtn(
+                        icon: CupertinoIcons.square_pencil,
+                        tooltip: 'Nouvelle conversation',
+                        onTap: () {
+                          ref.read(chatControllerProvider).createConversation();
+                          Navigator.of(context).maybePop();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Expanded(
+                  child: _ChatsContent(
+                    isLoading: chat.isLoading,
+                    pinned: pinned,
+                    recent: const [],
+                    expandedFolders: const {},
+                    onFolderToggle: (_) {},
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppThemeColors.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppThemeColors.stroke),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: AppThemeColors.pill,
+                        child: Text(
+                          displayName.substring(0, 1).toUpperCase(),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppThemeColors.textStrong,
                           ),
-                          if (displayEmail.isNotEmpty)
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
                             Text(
-                              displayEmail,
-                              style: theme.textTheme.bodySmall,
+                              displayName,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                        ],
+                            if (displayEmail.isNotEmpty)
+                              Text(
+                                displayEmail,
+                                style: theme.textTheme.bodySmall,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                    _DrawerIconBtn(
-                      icon: CupertinoIcons.gear_alt,
-                      tooltip: 'Paramètres',
-                      onTap: widget.onSettingsTap,
-                    ),
-                  ],
+                      _DrawerIconBtn(
+                        icon: CupertinoIcons.gear_alt,
+                        tooltip: 'Paramètres',
+                        onTap: widget.onSettingsTap,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -181,12 +186,14 @@ class _ConduitConversationDrawerState
 // ─── Contenu onglet Chats ────────────────────────────────────────────────────
 class _ChatsContent extends ConsumerWidget {
   const _ChatsContent({
+    required this.isLoading,
     required this.pinned,
     required this.recent,
     required this.expandedFolders,
     required this.onFolderToggle,
   });
 
+  final bool isLoading;
   final List<Conversation> pinned;
   final List<Conversation> recent;
   final Map<String, bool> expandedFolders;
@@ -195,86 +202,148 @@ class _ChatsContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final chat = ref.watch(chatControllerProvider);
+    if (isLoading && chat.conversations.isEmpty) {
+      return const _DrawerLoadingState();
+    }
 
-    // Get all unique folder names from the chat conversations (type = chat, non-empty folder)
-    final folders = chat.conversations
-        .where((c) => c.type == ConversationType.chat && c.folder.isNotEmpty)
-        .map((c) => c.folder)
-        .toSet()
-        .toList();
-
-    // Filter recent conversations: chats, not pinned, no folder
-    final recentNoFolder = recent.where((c) => c.folder.isEmpty).toList();
+    final grouped = _groupByPeriod(
+      chat.filter(
+        chat.conversations
+            .where((c) => c.type == ConversationType.chat)
+            .toList(),
+      ),
+    );
 
     return ListView(
       padding: EdgeInsets.zero,
       children: [
-        // Épinglées
         if (pinned.isNotEmpty) ...[
           _SectionHeader(label: 'Épinglées', count: pinned.length),
           const SizedBox(height: 6),
           for (final conv in pinned) _ConversationTile(conversation: conv),
           const SizedBox(height: 14),
         ],
-
-        // Dossiers
-        if (folders.isNotEmpty) ...[
-          _SectionHeader(label: 'Dossiers', count: folders.length),
-          const SizedBox(height: 8),
-          for (final folder in folders) ...[
-            _FolderTile(
-              label: folder,
-              count: chat.conversations
-                  .where(
-                    (c) =>
-                        c.type == ConversationType.chat && c.folder == folder,
-                  )
-                  .length,
-              expanded: expandedFolders[folder] ?? false,
-              onTap: () => onFolderToggle(folder),
-            ),
-            AnimatedSize(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeInOut,
-              alignment: Alignment.topCenter,
-              child: (expandedFolders[folder] ?? false)
-                  ? Padding(
-                      padding: const EdgeInsets.only(
-                        left: 14,
-                        top: 4,
-                        bottom: 8,
-                      ),
-                      child: Column(
-                        children: [
-                          for (final conv in chat.conversations.where(
-                            (c) =>
-                                c.type == ConversationType.chat &&
-                                c.folder == folder,
-                          ))
-                            _ConversationTile(conversation: conv),
-                        ],
-                      ),
-                    )
-                  : const SizedBox(width: double.infinity, height: 0),
-            ),
-            const SizedBox(height: 6),
-          ],
+        for (final entry in grouped.entries) ...[
+          _SectionHeader(label: entry.key, count: entry.value.length),
+          const SizedBox(height: 6),
+          for (final conv in entry.value) _ConversationTile(conversation: conv),
           const SizedBox(height: 14),
         ],
+      ],
+    );
+  }
 
-        // Récentes
-        if (recentNoFolder.isNotEmpty) ...[
-          _SectionHeader(label: 'Récentes', count: recentNoFolder.length),
-          const SizedBox(height: 6),
-          for (final conv in recentNoFolder)
-            _ConversationTile(conversation: conv),
-        ],
+  Map<String, List<Conversation>> _groupByPeriod(
+    List<Conversation> conversations,
+  ) {
+    final now = DateTime.now();
+    final today = <Conversation>[];
+    final last7Days = <Conversation>[];
+    final thisMonth = <Conversation>[];
+
+    for (final conversation in conversations) {
+      final date = conversation.updatedAt ?? conversation.createdAt;
+      if (date == null) {
+        thisMonth.add(conversation);
+        continue;
+      }
+
+      final difference = now.difference(date).inDays;
+      final isSameDay =
+          date.year == now.year &&
+          date.month == now.month &&
+          date.day == now.day;
+      if (isSameDay) {
+        today.add(conversation);
+        continue;
+      }
+      if (difference <= 7) {
+        last7Days.add(conversation);
+        continue;
+      }
+      if (date.year == now.year && date.month == now.month) {
+        thisMonth.add(conversation);
+      }
+    }
+
+    final result = <String, List<Conversation>>{};
+    if (today.isNotEmpty) {
+      result['Aujourd\'hui'] = today;
+    }
+    if (last7Days.isNotEmpty) {
+      result['7 derniers jours'] = last7Days;
+    }
+    if (thisMonth.isNotEmpty) {
+      result['Ce mois-ci'] = thisMonth;
+    }
+    return result;
+  }
+}
+
+class _DrawerLoadingState extends StatelessWidget {
+  const _DrawerLoadingState();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: const [
+        _SectionHeader(label: 'Chargement'),
+        SizedBox(height: 8),
+        _DrawerSkeletonTile(),
+        _DrawerSkeletonTile(),
+        _DrawerSkeletonTile(),
+        SizedBox(height: 16),
+        _DrawerSkeletonTile(short: true),
+        _DrawerSkeletonTile(),
       ],
     );
   }
 }
 
-// ─── En-tête de section ───────────────────────────────────────────────────────
+class _DrawerSkeletonTile extends StatelessWidget {
+  const _DrawerSkeletonTile({this.short = false});
+
+  final bool short;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: AppThemeColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppThemeColors.stroke),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: short ? 120 : 170,
+              height: 11,
+              decoration: BoxDecoration(
+                color: AppThemeColors.pill,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: short ? 70 : 110,
+              height: 9,
+              decoration: BoxDecoration(
+                color: AppThemeColors.pill,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({required this.label, this.count});
 
@@ -287,19 +356,12 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
         children: [
-          Icon(
-            CupertinoIcons.chevron_down,
-            size: 12,
-            color: AppThemeColors.textMuted,
-          ),
-          const SizedBox(width: 6),
           Text(
-            label.toUpperCase(),
+            label,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.w700,
               color: AppThemeColors.textMuted,
-              letterSpacing: 0.6,
-              fontSize: 10,
+              fontSize: 11,
             ),
           ),
           if (count != null) ...[
@@ -325,81 +387,6 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// ─── Tuile de dossier (cliquable) ────────────────────────────────────────────
-class _FolderTile extends StatelessWidget {
-  const _FolderTile({
-    required this.label,
-    required this.count,
-    required this.expanded,
-    required this.onTap,
-  });
-
-  final String label;
-  final int count;
-  final bool expanded;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppThemeColors.card,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppThemeColors.stroke),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                CupertinoIcons.folder,
-                size: 18,
-                color: AppThemeColors.textSoft,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  label,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppThemeColors.pill,
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: Text(
-                  '$count',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppThemeColors.textSoft,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              AnimatedRotation(
-                turns: expanded ? 0.25 : 0.0,
-                duration: const Duration(milliseconds: 180),
-                child: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 14,
-                  color: AppThemeColors.textMuted,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ─── Tuile de conversation ────────────────────────────────────────────────────
 class _ConversationTile extends ConsumerWidget {
   const _ConversationTile({required this.conversation});
@@ -412,12 +399,12 @@ class _ConversationTile extends ConsumerWidget {
     final isSelected = chat.selectedConversation.id == conversation.id;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
+      padding: const EdgeInsets.only(bottom: 4),
       child: Material(
-        color: isSelected ? AppThemeColors.pillSelected : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
+        color: isSelected ? AppThemeColors.accentSoft : Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           onTap: () {
             ref.read(chatControllerProvider).selectConversation(conversation);
             Navigator.of(context).maybePop();
@@ -427,18 +414,34 @@ class _ConversationTile extends ConsumerWidget {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    conversation.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: isSelected
-                          ? FontWeight.w600
-                          : FontWeight.w400,
-                      color: isSelected
-                          ? AppThemeColors.background
-                          : AppThemeColors.textSoft,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        conversation.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: isSelected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                          color: isSelected
+                              ? AppThemeColors.textStrong
+                              : AppThemeColors.textSoft,
+                        ),
+                      ),
+                      if (conversation.subtitle.trim().isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          conversation.subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppThemeColors.textMuted),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 if (conversation.type == ConversationType.chat) ...[
@@ -458,7 +461,7 @@ class _ConversationTile extends ConsumerWidget {
                             : CupertinoIcons.pin,
                         size: 14,
                         color: isSelected
-                            ? AppThemeColors.background
+                            ? AppThemeColors.accent
                             : (conversation.isPinned
                                   ? AppThemeColors.textStrong
                                   : AppThemeColors.textMuted.withValues(
@@ -485,7 +488,7 @@ class _ConversationTile extends ConsumerWidget {
                       CupertinoIcons.trash,
                       size: 13,
                       color: isSelected
-                          ? AppThemeColors.background.withValues(alpha: 0.6)
+                          ? AppThemeColors.textSoft
                           : AppThemeColors.textMuted.withValues(alpha: 0.4),
                     ),
                   ),
@@ -514,15 +517,15 @@ class _DrawerIconBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final button = Material(
-      color: AppThemeColors.pill,
+      color: AppThemeColors.surface,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: SizedBox(
-          width: 44,
-          height: 44,
-          child: Icon(icon, size: 20, color: AppThemeColors.textStrong),
+          width: 40,
+          height: 40,
+          child: Icon(icon, size: 18, color: AppThemeColors.textStrong),
         ),
       ),
     );

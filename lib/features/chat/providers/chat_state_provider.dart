@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/constants/backend_config.dart';
 import '../../../core/services/chatia_api_service.dart';
@@ -22,6 +23,8 @@ class ChatController extends ChangeNotifier {
 
   final ChatiaApiService _apiService;
   static const _draftConversationId = '__draft__';
+  static const _selectedConversationStorageKey =
+      'chatia.selected_conversation_id';
 
   late List<Conversation> _conversations;
   late Conversation _selectedConversation;
@@ -32,6 +35,7 @@ class ChatController extends ChangeNotifier {
   final Map<String, String> _conversationErrors = <String, String>{};
   bool isLoading = false;
   bool isStreaming = false;
+  bool _hasStreamingResponseStarted = false;
   StreamSubscription<ChatStreamEvent>? _activeStreamSubscription;
   String searchQuery = '';
   String? errorMessage;
@@ -49,6 +53,8 @@ class ChatController extends ChangeNotifier {
       (_conversationNextCursors[_selectedConversation.id]?.isNotEmpty ?? false);
   String? get selectedConversationErrorMessage =>
       _conversationErrors[_selectedConversation.id];
+  bool get isAwaitingResponse => isStreaming && !_hasStreamingResponseStarted;
+  bool get isRenderingResponse => isStreaming && _hasStreamingResponseStarted;
 
   List<Conversation> get pinnedConversations => _conversations
       .where(
@@ -81,6 +87,7 @@ class ChatController extends ChangeNotifier {
     _conversationErrors.clear();
     isLoading = false;
     isStreaming = false;
+    _hasStreamingResponseStarted = false;
     errorMessage = null;
     infoMessage = null;
     searchQuery = '';
@@ -112,15 +119,27 @@ class ChatController extends ChangeNotifier {
           )
           .toList();
       final visibleResults = await _filterEmptyBackendConversations(results);
+      final persistedConversationId = await _restoreSelectedConversationId();
 
       if (visibleResults.isNotEmpty) {
         _conversations = visibleResults;
-        if (_selectedConversation.id != _draftConversationId) {
-          _selectedConversation = _createDraftConversation();
+        final preferredId = _selectedConversation.id != _draftConversationId
+            ? _selectedConversation.id
+            : persistedConversationId;
+        final restored = preferredId == null
+            ? null
+            : _findConversationById(visibleResults, preferredId);
+        if (restored != null) {
+          _selectedConversation = restored;
+          await _persistSelectedConversationId(restored.id);
+        } else {
+          _selectedConversation = visibleResults.first;
+          await _persistSelectedConversationId(_selectedConversation.id);
         }
       } else {
         _conversations = const [];
         _selectedConversation = _createDraftConversation();
+        await _clearSelectedConversationId();
       }
     } catch (error) {
       errorMessage = error.toString();
@@ -135,6 +154,7 @@ class ChatController extends ChangeNotifier {
     bool forceReload = false,
   }) async {
     _selectedConversation = conversation;
+    unawaited(_persistSelectedConversationId(conversation.id));
     notifyListeners();
 
     if (!_apiService.isAvailable ||
@@ -272,6 +292,7 @@ class ChatController extends ChangeNotifier {
             ? _conversations.length - 1
             : index;
         _selectedConversation = _conversations[nextIndex];
+        unawaited(_persistSelectedConversationId(_selectedConversation.id));
       } else {
         createConversation();
       }
@@ -346,6 +367,7 @@ class ChatController extends ChangeNotifier {
 
   void createConversation() {
     _selectedConversation = _createDraftConversation();
+    unawaited(_clearSelectedConversationId());
     notifyListeners();
   }
 
@@ -365,11 +387,14 @@ class ChatController extends ChangeNotifier {
       return;
     }
 
-    if (currentAgentId == null || currentAgentId.isEmpty || currentAgentId == agentId) {
+    if (currentAgentId == null ||
+        currentAgentId.isEmpty ||
+        currentAgentId == agentId) {
       return;
     }
 
     _selectedConversation = _createDraftConversation(agentId: agentId);
+    unawaited(_clearSelectedConversationId());
     notifyListeners();
   }
 
@@ -565,6 +590,7 @@ class ChatController extends ChangeNotifier {
     }
 
     isStreaming = true;
+    _hasStreamingResponseStarted = false;
     errorMessage = null;
     infoMessage = null;
     notifyListeners();
@@ -611,6 +637,7 @@ class ChatController extends ChangeNotifier {
     }
 
     isStreaming = true;
+    _hasStreamingResponseStarted = false;
     errorMessage = null;
     notifyListeners();
 
@@ -632,6 +659,7 @@ class ChatController extends ChangeNotifier {
     _activeStreamSubscription = null;
     if (isStreaming) {
       isStreaming = false;
+      _hasStreamingResponseStarted = false;
       notifyListeners();
     }
   }
@@ -740,6 +768,7 @@ class ChatController extends ChangeNotifier {
   }) async {
     try {
       isStreaming = true;
+      _hasStreamingResponseStarted = false;
       errorMessage = null;
       notifyListeners();
 
@@ -844,6 +873,7 @@ class ChatController extends ChangeNotifier {
   }) async {
     try {
       isStreaming = true;
+      _hasStreamingResponseStarted = false;
       errorMessage = null;
       infoMessage = null;
       notifyListeners();
@@ -941,6 +971,7 @@ class ChatController extends ChangeNotifier {
           }
 
           if (event.error != null && event.error!.isNotEmpty) {
+            _hasStreamingResponseStarted = true;
             errorMessage = event.error;
             infoMessage = null;
             _updateAssistantMessage(
@@ -951,6 +982,7 @@ class ChatController extends ChangeNotifier {
           }
 
           if (event.content.isNotEmpty) {
+            _hasStreamingResponseStarted = true;
             if (event.done) {
               accumulated = event.content;
             } else {
@@ -960,6 +992,7 @@ class ChatController extends ChangeNotifier {
           }
         },
         onError: (error, _) {
+          _hasStreamingResponseStarted = true;
           _updateAssistantMessage(assistantId, '$errorPrefix : $error');
           if (!completer.isCompleted) {
             completer.complete();
@@ -982,6 +1015,7 @@ class ChatController extends ChangeNotifier {
       await _activeStreamSubscription?.cancel();
       _activeStreamSubscription = null;
       isStreaming = false;
+      _hasStreamingResponseStarted = false;
       notifyListeners();
     }
   }
@@ -1062,6 +1096,7 @@ class ChatController extends ChangeNotifier {
     if (_selectedConversation.id == oldId) {
       _selectedConversation = _selectedConversation.copyWith(id: newId);
     }
+    unawaited(_persistSelectedConversationId(_selectedConversation.id));
     notifyListeners();
   }
 
@@ -1202,5 +1237,48 @@ class ChatController extends ChangeNotifier {
     errorMessage = null;
     infoMessage = null;
     notifyListeners();
+  }
+
+  Conversation? _findConversationById(
+    List<Conversation> source,
+    String conversationId,
+  ) {
+    for (final conversation in source) {
+      if (conversation.id == conversationId) {
+        return conversation;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _persistSelectedConversationId(String conversationId) async {
+    if (conversationId.isEmpty || conversationId == _draftConversationId) {
+      await _clearSelectedConversationId();
+      return;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_selectedConversationStorageKey, conversationId);
+    } catch (_) {}
+  }
+
+  Future<String?> _restoreSelectedConversationId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getString(_selectedConversationStorageKey)?.trim();
+      if (value == null || value.isEmpty) {
+        return null;
+      }
+      return value;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _clearSelectedConversationId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_selectedConversationStorageKey);
+    } catch (_) {}
   }
 }

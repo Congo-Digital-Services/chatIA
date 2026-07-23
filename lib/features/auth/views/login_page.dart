@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/backend_config.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../providers/auth_state_provider.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
@@ -44,9 +45,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             _lastErrorToast != next.errorMessage;
         if (hasNewError && mounted) {
           _lastErrorToast = next.errorMessage;
-          _showToast(
+          showAppToast(
+            context,
             message: next.errorMessage!,
-            isError: true,
+            type: AppToastType.error,
           );
         }
 
@@ -56,9 +58,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             _lastInfoToast != next.infoMessage;
         if (hasNewInfo && mounted) {
           _lastInfoToast = next.infoMessage;
-          _showToast(
+          showAppToast(
+            context,
             message: next.infoMessage!,
-            isError: false,
+            type: AppToastType.success,
           );
         }
 
@@ -82,62 +85,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         });
       },
     );
-  }
-
-  void _showToast({
-    required String message,
-    required bool isError,
-  }) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          elevation: 0,
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          padding: EdgeInsets.zero,
-          backgroundColor: Colors.transparent,
-          duration: Duration(seconds: isError ? 4 : 3),
-          content: Container(
-            decoration: BoxDecoration(
-              color: isError ? const Color(0xFF8E2424) : const Color(0xFF0F7B6C),
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 22,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Icon(
-                  isError
-                      ? Icons.error_outline_rounded
-                      : Icons.check_circle_outline_rounded,
-                  color: Colors.white,
-                  size: 22,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    message,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      height: 1.35,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
   }
 
   @override
@@ -190,189 +137,256 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     return Scaffold(
       backgroundColor: AppThemeColors.background,
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final ctaSpacing = (constraints.maxHeight * 0.22).clamp(
-              32.0,
-              220.0,
-            );
-            return SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.max,
-                  children: [
-                    // ── Offset supérieur : ancre le contenu dans le tiers haut ──
-                    SizedBox(height: constraints.maxHeight * 0.09),
-
-                    // ── Logo officiel ─────────────────────────────────────────
-                    Image.asset(
-                      'assets/icons/congo_logo.png',
-                      height: 100,
-                      fit: BoxFit.contain,
-                    ),
-                    const SizedBox(height: 24),
-
-                    // ── Titre ──────────────────────────────────────────────────
-                    Text(
-                      'ChatIA',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.displaySmall?.copyWith(
-                        color: AppThemeColors.textStrong,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Votre assistant IA sécurisé,\npowered by Congo Digital Services.',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: AppThemeColors.textSoft,
-                        height: 1.5,
-                      ),
-                    ),
-
-                    // ── Espace fixe borné pour éviter un flex non borné dans le scroll ──
-                    SizedBox(height: (ctaSpacing * 0.35).toDouble()),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        _isRegisterMode ? 'Inscription' : 'Connexion',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          color: AppThemeColors.textStrong,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-
-                    if (_isRegisterMode) ...[
-                      _AuthTextField(
-                        controller: _nameController,
-                        hintText: 'Nom complet',
-                        enabled: !auth.isLoading,
-                      ),
-                      const SizedBox(height: 12),
-                      _AuthTextField(
-                        controller: _usernameController,
-                        hintText: 'Nom d’utilisateur',
-                        enabled: !auth.isLoading,
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-
-                    _AuthTextField(
-                      controller: _emailController,
-                      hintText: 'Adresse e-mail',
-                      keyboardType: TextInputType.emailAddress,
-                      enabled: !auth.isLoading,
-                    ),
-                    const SizedBox(height: 12),
-                    _AuthTextField(
-                      controller: _passwordController,
-                      hintText: 'Mot de passe',
-                      obscureText: _obscurePassword,
-                      enabled: !auth.isLoading,
-                      suffixIcon: IconButton(
-                        onPressed: auth.isLoading
-                            ? null
-                            : () => setState(() {
-                                _obscurePassword = !_obscurePassword;
-                              }),
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_off_rounded
-                              : Icons.visibility_rounded,
-                          color: AppThemeColors.textMuted,
-                        ),
-                      ),
-                    ),
-                    if (_isRegisterMode) ...[
-                      const SizedBox(height: 12),
-                      _AuthTextField(
-                        controller: _confirmPasswordController,
-                        hintText: 'Confirmer le mot de passe',
-                        obscureText: _obscureConfirmPassword,
-                        enabled: !auth.isLoading,
-                        suffixIcon: IconButton(
-                          onPressed: auth.isLoading
-                              ? null
-                              : () => setState(() {
-                                  _obscureConfirmPassword =
-                                      !_obscureConfirmPassword;
-                                }),
-                          icon: Icon(
-                            _obscureConfirmPassword
-                                ? Icons.visibility_off_rounded
-                                : Icons.visibility_rounded,
-                            color: AppThemeColors.textMuted,
-                          ),
-                        ),
-                      ),
-                    ],
-                    SizedBox(height: (ctaSpacing * 0.18).toDouble()),
-
-                    // ── Bouton d'authentification ──────────────────────────────
-                    _LoginButton(
-                      isLoading: auth.isLoading,
-                      label: _isRegisterMode ? 'Créer un compte' : 'Continuer',
-                      loadingLabel: _isRegisterMode
-                          ? 'Inscription en cours…'
-                          : 'Connexion en cours…',
-                      onTap: auth.isLoading
-                          ? null
-                          : () {
-                              if (_isRegisterMode &&
-                                  _passwordController.text !=
-                                      _confirmPasswordController.text) {
-                                ref
-                                    .read(authControllerProvider)
-                                    .setErrorMessage(
-                                      'Les mots de passe ne correspondent pas.',
-                                    );
-                                return;
-                              }
-                              if (_isRegisterMode) {
-                                ref.read(authControllerProvider).register(
-                                      name: _nameController.text.trim(),
-                                      username: _usernameController.text.trim(),
-                                      email: _emailController.text.trim(),
-                                      password: _passwordController.text,
-                                      confirmPassword:
-                                          _confirmPasswordController.text,
-                                    );
-                                return;
-                              }
-                              ref.read(authControllerProvider).signIn(
-                                    email: _emailController.text.trim(),
-                                    password: _passwordController.text,
-                                  );
-                            },
-                    ),
-                    const SizedBox(height: 18),
-                    _AuthFooterLink(
-                      isRegisterMode: _isRegisterMode,
-                      enabled: !auth.isLoading,
-                      onToggle: () => setState(() {
-                        _isRegisterMode = !_isRegisterMode;
-                        _passwordController.clear();
-                        _confirmPasswordController.clear();
-                        _obscurePassword = true;
-                        _obscureConfirmPassword = true;
-                        ref.read(authControllerProvider).clearMessages();
-                      }),
-                    ),
-
-                    // ── Marge de sécurité en bas ───────────────────────────────
-                    const SizedBox(height: 32),
+      body: Stack(
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(gradient: AppThemeColors.shellGradient),
+            child: const SizedBox.expand(),
+          ),
+          Positioned(
+            top: -80,
+            right: -30,
+            child: Container(
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    AppThemeColors.accent.withValues(alpha: 0.18),
+                    AppThemeColors.accent.withValues(alpha: 0),
                   ],
                 ),
               ),
-            );
-          },
-        ),
+            ),
+          ),
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final ctaSpacing = (constraints.maxHeight * 0.22).clamp(
+                  32.0,
+                  220.0,
+                );
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.max,
+                      children: [
+                        SizedBox(height: constraints.maxHeight * 0.09),
+                        Container(
+                          width: 104,
+                          height: 104,
+                          decoration: BoxDecoration(
+                            color: AppThemeColors.surface.withValues(
+                              alpha: 0.82,
+                            ),
+                            borderRadius: BorderRadius.circular(28),
+                            border: Border.all(color: AppThemeColors.stroke),
+                            boxShadow: AppThemeShadows.soft,
+                          ),
+                          padding: const EdgeInsets.all(16),
+                          child: Image.asset(
+                            'assets/icons/congo_logo.png',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          'ChatIA',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.displaySmall?.copyWith(
+                            color: AppThemeColors.textStrong,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Une messagerie IA claire, rapide et moderne\npour vos échanges avec LibreChat.',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: AppThemeColors.textSoft,
+                            height: 1.5,
+                          ),
+                        ),
+                        SizedBox(height: (ctaSpacing * 0.35).toDouble()),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(22),
+                          decoration: BoxDecoration(
+                            color: AppThemeColors.surface.withValues(
+                              alpha: 0.88,
+                            ),
+                            borderRadius: BorderRadius.circular(30),
+                            border: Border.all(color: AppThemeColors.stroke),
+                            boxShadow: AppThemeShadows.medium,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _isRegisterMode
+                                    ? 'Créer un compte'
+                                    : 'Connexion',
+                                style: theme.textTheme.headlineMedium?.copyWith(
+                                  color: AppThemeColors.textStrong,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _isRegisterMode
+                                    ? 'Rejoignez l’espace de travail et commencez à discuter.'
+                                    : 'Connectez-vous pour reprendre vos conversations.',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: AppThemeColors.textSoft,
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              if (_isRegisterMode) ...[
+                                _AuthTextField(
+                                  controller: _nameController,
+                                  hintText: 'Nom complet',
+                                  enabled: !auth.isLoading,
+                                ),
+                                const SizedBox(height: 12),
+                                _AuthTextField(
+                                  controller: _usernameController,
+                                  hintText: 'Nom d’utilisateur',
+                                  enabled: !auth.isLoading,
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                              _AuthTextField(
+                                controller: _emailController,
+                                hintText: 'Adresse e-mail',
+                                keyboardType: TextInputType.emailAddress,
+                                enabled: !auth.isLoading,
+                              ),
+                              const SizedBox(height: 12),
+                              _AuthTextField(
+                                controller: _passwordController,
+                                hintText: 'Mot de passe',
+                                obscureText: _obscurePassword,
+                                enabled: !auth.isLoading,
+                                suffixIcon: IconButton(
+                                  onPressed: auth.isLoading
+                                      ? null
+                                      : () => setState(() {
+                                          _obscurePassword = !_obscurePassword;
+                                        }),
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility_off_rounded
+                                        : Icons.visibility_rounded,
+                                    color: AppThemeColors.textMuted,
+                                  ),
+                                ),
+                              ),
+                              if (_isRegisterMode) ...[
+                                const SizedBox(height: 12),
+                                _AuthTextField(
+                                  controller: _confirmPasswordController,
+                                  hintText: 'Confirmer le mot de passe',
+                                  obscureText: _obscureConfirmPassword,
+                                  enabled: !auth.isLoading,
+                                  suffixIcon: IconButton(
+                                    onPressed: auth.isLoading
+                                        ? null
+                                        : () => setState(() {
+                                            _obscureConfirmPassword =
+                                                !_obscureConfirmPassword;
+                                          }),
+                                    icon: Icon(
+                                      _obscureConfirmPassword
+                                          ? Icons.visibility_off_rounded
+                                          : Icons.visibility_rounded,
+                                      color: AppThemeColors.textMuted,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              SizedBox(height: (ctaSpacing * 0.18).toDouble()),
+                              _LoginButton(
+                                isLoading: auth.isLoading,
+                                label: _isRegisterMode
+                                    ? 'Créer un compte'
+                                    : 'Continuer',
+                                loadingLabel: _isRegisterMode
+                                    ? 'Inscription en cours…'
+                                    : 'Connexion en cours…',
+                                onTap: auth.isLoading
+                                    ? null
+                                    : () {
+                                        if (_isRegisterMode &&
+                                            _passwordController.text !=
+                                                _confirmPasswordController
+                                                    .text) {
+                                          ref
+                                              .read(authControllerProvider)
+                                              .setErrorMessage(
+                                                'Les mots de passe ne correspondent pas.',
+                                              );
+                                          return;
+                                        }
+                                        if (_isRegisterMode) {
+                                          ref
+                                              .read(authControllerProvider)
+                                              .register(
+                                                name: _nameController.text
+                                                    .trim(),
+                                                username: _usernameController
+                                                    .text
+                                                    .trim(),
+                                                email: _emailController.text
+                                                    .trim(),
+                                                password:
+                                                    _passwordController.text,
+                                                confirmPassword:
+                                                    _confirmPasswordController
+                                                        .text,
+                                              );
+                                          return;
+                                        }
+                                        ref
+                                            .read(authControllerProvider)
+                                            .signIn(
+                                              email: _emailController.text
+                                                  .trim(),
+                                              password:
+                                                  _passwordController.text,
+                                            );
+                                      },
+                              ),
+                              const SizedBox(height: 18),
+                              _AuthFooterLink(
+                                isRegisterMode: _isRegisterMode,
+                                enabled: !auth.isLoading,
+                                onToggle: () => setState(() {
+                                  _isRegisterMode = !_isRegisterMode;
+                                  _passwordController.clear();
+                                  _confirmPasswordController.clear();
+                                  _obscurePassword = true;
+                                  _obscureConfirmPassword = true;
+                                  ref
+                                      .read(authControllerProvider)
+                                      .clearMessages();
+                                }),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -391,9 +405,9 @@ class _AuthFooterLink extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final baseStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
-      color: AppThemeColors.textSoft,
-    );
+    final baseStyle = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(color: AppThemeColors.textSoft);
     final actionStyle = baseStyle?.copyWith(
       color: enabled ? AppThemeColors.textStrong : AppThemeColors.textMuted,
       decoration: TextDecoration.underline,
@@ -456,14 +470,14 @@ class _AuthTextField extends StatelessWidget {
       enabled: enabled,
       autocorrect: false,
       enableSuggestions: !obscureText,
-      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-        color: AppThemeColors.textStrong,
-      ),
+      style: Theme.of(
+        context,
+      ).textTheme.bodyLarge?.copyWith(color: AppThemeColors.textStrong),
       decoration: InputDecoration(
         hintText: hintText,
         hintStyle: TextStyle(color: AppThemeColors.textMuted),
         filled: true,
-        fillColor: AppThemeColors.card,
+        fillColor: AppThemeColors.backgroundSoft.withValues(alpha: 0.7),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 18,
           vertical: 16,
@@ -507,14 +521,13 @@ class _LoginButton extends StatelessWidget {
 
     return SizedBox(
       width: double.infinity,
-      child: OutlinedButton(
+      child: FilledButton(
         onPressed: isLoading ? null : onTap,
-        style: OutlinedButton.styleFrom(
+        style: FilledButton.styleFrom(
           backgroundColor: primaryColor,
-          side: BorderSide(color: primaryColor, width: 1),
           padding: const EdgeInsets.symmetric(vertical: 16),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(18),
           ),
         ),
         child: Row(

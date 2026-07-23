@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/audio_recorder.dart';
-import '../../../core/services/file_picker.dart';
 import '../../../shared/models/chat_message.dart';
 import '../../../shared/models/conversation.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -32,8 +31,6 @@ class MessageBubble extends ConsumerWidget {
     );
   }
 
-  /// Affiche le menu contextuel pour modifier ou supprimer le message.
-  /// Utilise les routes : PUT et DELETE /api/messages/:conversationId/:messageId
   void _showMessageActions(BuildContext context, WidgetRef ref) {
     HapticFeedback.mediumImpact();
     final chat = ref.read(chatControllerProvider);
@@ -47,7 +44,9 @@ class MessageBubble extends ConsumerWidget {
         return Container(
           margin: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: isDarkSheet ? const Color(0xFF1C1C1C) : const Color(0xFFF5F5F5),
+            color: isDarkSheet
+                ? const Color(0xFF1C1C1C)
+                : const Color(0xFFF5F5F5),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Column(
@@ -63,7 +62,6 @@ class MessageBubble extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              // Copier
               ListTile(
                 leading: const Icon(CupertinoIcons.doc_on_doc),
                 title: const Text('Copier'),
@@ -77,7 +75,6 @@ class MessageBubble extends ConsumerWidget {
                   );
                 },
               ),
-              // Modifier (uniquement si l'utilisateur peut éditer)
               if (message.role == ChatRole.user)
                 ListTile(
                   leading: const Icon(CupertinoIcons.pencil),
@@ -87,7 +84,6 @@ class MessageBubble extends ConsumerWidget {
                     _showEditDialog(context, ref, chat, conversationId);
                   },
                 ),
-              // Supprimer — DELETE /api/messages/:conversationId/:messageId
               ListTile(
                 leading: Icon(
                   CupertinoIcons.delete,
@@ -110,8 +106,6 @@ class MessageBubble extends ConsumerWidget {
     );
   }
 
-  /// Boîte de dialogue pour modifier le texte du message.
-  /// Utilise PUT /api/messages/:conversationId/:messageId
   void _showEditDialog(
     BuildContext context,
     WidgetRef ref,
@@ -156,14 +150,32 @@ class MessageBubble extends ConsumerWidget {
     );
   }
 
+  bool _shouldShowAttachmentCaption() {
+    final text = message.text.trim();
+    if (text.isEmpty) {
+      return false;
+    }
+    if (message.fileUrl != null && text.startsWith('Fichier envoyé : ')) {
+      return false;
+    }
+    if (message.audioUrl != null &&
+        RegExp(r'^Message vocal \(.+\)$').hasMatch(text)) {
+      return false;
+    }
+    return true;
+  }
+
   Widget _buildBubble(BuildContext context, ThemeData theme, bool isUser) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bubbleColor = isUser
-        ? (isDark ? Colors.white : Colors.black)
+        ? (isDark ? const Color(0xFF1E2330) : const Color(0xFFF2F4F8))
         : Colors.transparent;
-    final textColor = isUser
-        ? (isDark ? Colors.black : Colors.white)
-        : (isDark ? Colors.white : Colors.black);
+    final textColor = AppThemeColors.textStrong;
+    final isPendingAssistant =
+        !isUser &&
+        message.text.trim().isEmpty &&
+        message.fileUrl == null &&
+        message.audioUrl == null;
 
     if (isUser) {
       return Align(
@@ -179,24 +191,22 @@ class MessageBubble extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
-                  vertical: 12,
+                  vertical: 14,
                 ),
                 decoration: BoxDecoration(
                   color: bubbleColor,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: isDark ? Colors.white : Colors.black, width: 1),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: AppThemeColors.stroke),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Audio Message
                     if (message.audioUrl != null)
                       _VoiceMessagePlayer(
                         audioUrl: message.audioUrl!,
                         isUser: true,
                       )
-                    // File Message
                     else if (message.fileUrl != null)
                       _FileMessageBlock(
                         fileUrl: message.fileUrl!,
@@ -205,7 +215,6 @@ class MessageBubble extends ConsumerWidget {
                         isImage: message.isImage ?? false,
                         isUser: true,
                       )
-                    // Regular Text Message
                     else
                       Text(
                         message.text,
@@ -214,6 +223,17 @@ class MessageBubble extends ConsumerWidget {
                           height: 1.45,
                         ),
                       ),
+                    if ((message.audioUrl != null || message.fileUrl != null) &&
+                        _shouldShowAttachmentCaption()) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        message.text,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: textColor,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -223,49 +243,48 @@ class MessageBubble extends ConsumerWidget {
       );
     }
 
-    // Bulle assistant
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Avatar IA
         Container(
-          width: 28,
-          height: 28,
+          width: 34,
+          height: 34,
           margin: const EdgeInsets.only(top: 2, right: 10),
           decoration: BoxDecoration(
-            color: isDark ? Colors.white : Colors.black,
-            borderRadius: BorderRadius.circular(6),
+            color: AppThemeColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppThemeColors.stroke),
           ),
           child: Center(
-            child: Icon(
-              Icons.auto_awesome_rounded,
-              size: 14,
-              color: isDark ? Colors.black : Colors.white,
+            child: Image.asset(
+              'assets/icons/congo_logo.png',
+              height: 18,
+              fit: BoxFit.contain,
             ),
           ),
         ),
-        // Contenu assistant
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.only(top: 4, right: 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Audio assistant (si l'assistant répond par la voix)
                 if (message.audioUrl != null)
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: isDark ? Colors.black : Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppThemeColors.stroke, width: 1),
+                      color: AppThemeColors.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppThemeColors.stroke),
                     ),
                     child: _VoiceMessagePlayer(
                       audioUrl: message.audioUrl!,
                       isUser: false,
                     ),
                   )
+                else if (isPendingAssistant)
+                  const _AssistantPendingState()
                 else
                   Text(
                     message.text,
@@ -274,6 +293,38 @@ class MessageBubble extends ConsumerWidget {
                       height: 1.55,
                     ),
                   ),
+                if (!isPendingAssistant) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _AssistantAction(
+                        icon: CupertinoIcons.doc_on_doc,
+                        label: 'Copier',
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(text: message.text));
+                          showAppToast(
+                            context,
+                            message: 'Réponse copiée.',
+                            type: AppToastType.success,
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 6),
+                      _AssistantAction(
+                        icon: CupertinoIcons.arrow_clockwise,
+                        label: 'Régénérer',
+                        onTap: () {},
+                      ),
+                      const SizedBox(width: 6),
+                      _AssistantAction(
+                        icon: CupertinoIcons.hand_thumbsup,
+                        label: 'Utile',
+                        onTap: () {},
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -283,7 +334,106 @@ class MessageBubble extends ConsumerWidget {
   }
 }
 
-// ─── Lecteur de message vocal ─────────────────────────────────────────────────
+class _AssistantPendingState extends StatefulWidget {
+  const _AssistantPendingState();
+
+  @override
+  State<_AssistantPendingState> createState() => _AssistantPendingStateState();
+}
+
+class _AssistantPendingStateState extends State<_AssistantPendingState>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Réponse en préparation',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: AppThemeColors.textSoft,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(width: 8),
+        AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            return Row(
+              children: List.generate(3, (index) {
+                final phase = (_controller.value * 3) - index;
+                final opacity = phase.clamp(0.25, 1.0).toDouble();
+                return Container(
+                  width: 6,
+                  height: 6,
+                  margin: EdgeInsets.only(right: index == 2 ? 0 : 4),
+                  decoration: BoxDecoration(
+                    color: AppThemeColors.textSoft.withValues(alpha: opacity),
+                    shape: BoxShape.circle,
+                  ),
+                );
+              }),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _AssistantAction extends StatelessWidget {
+  const _AssistantAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: AppThemeColors.textMuted),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppThemeColors.textMuted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _VoiceMessagePlayer extends StatefulWidget {
   const _VoiceMessagePlayer({required this.audioUrl, required this.isUser});
 
@@ -356,7 +506,10 @@ class _VoiceMessagePlayerState extends State<_VoiceMessagePlayer> {
             decoration: BoxDecoration(
               color: btnBgColor,
               shape: BoxShape.circle,
-              border: Border.all(color: isDark ? Colors.white : Colors.black, width: 1),
+              border: Border.all(
+                color: isDark ? Colors.white : Colors.black,
+                width: 1,
+              ),
             ),
             child: Icon(
               _isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
@@ -370,7 +523,6 @@ class _VoiceMessagePlayerState extends State<_VoiceMessagePlayer> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Waveform interactif
             SizedBox(
               width: 120,
               height: 16,
@@ -384,14 +536,13 @@ class _VoiceMessagePlayerState extends State<_VoiceMessagePlayer> {
                           : index % 2 == 0
                           ? 4.0
                           : 0.0);
-                  // Couleur waveform thème-aware
                   final waveFilledColor = widget.isUser
                       ? (isDark ? Colors.white70 : Colors.black87)
                       : AppThemeColors.accent;
                   final waveUnfillColor = widget.isUser
                       ? (isDark
-                          ? Colors.white.withValues(alpha: 0.25)
-                          : Colors.black.withValues(alpha: 0.20))
+                            ? Colors.white.withValues(alpha: 0.25)
+                            : Colors.black.withValues(alpha: 0.20))
                       : AppThemeColors.textMuted.withValues(alpha: 0.4);
                   return Container(
                     margin: const EdgeInsets.symmetric(horizontal: 1),
@@ -422,7 +573,6 @@ class _VoiceMessagePlayerState extends State<_VoiceMessagePlayer> {
   }
 }
 
-// ─── Bloc de fichier / image ──────────────────────────────────────────────────
 class _FileMessageBlock extends StatelessWidget {
   const _FileMessageBlock({
     required this.fileUrl,
@@ -443,112 +593,80 @@ class _FileMessageBlock extends StatelessWidget {
     final theme = Theme.of(context);
 
     if (isImage) {
-      return GestureDetector(
-        onTap: () => filePicker.openFile(fileUrl),
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                constraints: const BoxConstraints(maxHeight: 220),
-                child: Image.network(
-                  fileUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      width: 200,
-                      height: 150,
-                      color: AppThemeColors.pill,
-                      child: Center(
-                        child: Icon(
-                          CupertinoIcons.photo,
-                          size: 36,
-                          color: AppThemeColors.textMuted,
-                        ),
-                      ),
-                    );
-                  },
-                ),
+            Image.network(
+              fileUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, error, stackTrace) => Container(
+                height: 180,
+                color: AppThemeColors.surface,
+                alignment: Alignment.center,
+                child: const Icon(CupertinoIcons.photo),
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 10),
             Text(
               fileName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
                 color: AppThemeColors.textStrong,
               ),
             ),
-            if (fileSize.isNotEmpty)
+            if (fileSize.isNotEmpty) ...[
+              const SizedBox(height: 4),
               Text(
                 fileSize,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  fontSize: 10,
                   color: AppThemeColors.textMuted,
                 ),
               ),
+            ],
           ],
         ),
       );
     }
 
-    // Fichier régulier
-    return GestureDetector(
-      onTap: () => filePicker.openFile(fileUrl),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? AppThemeColors.cardStrong
-              : AppThemeColors.card.withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppThemeColors.stroke),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              CupertinoIcons.doc_text_fill,
-              size: 28,
-              color: AppThemeColors.textSoft,
-            ),
-            const SizedBox(width: 10),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppThemeColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppThemeColors.stroke),
+      ),
+      child: Row(
+        children: [
+          Icon(CupertinoIcons.doc, color: AppThemeColors.textSoft, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  fileName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: AppThemeColors.textStrong,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (fileSize.isNotEmpty)
                   Text(
-                    fileName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+                    fileSize,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppThemeColors.textMuted,
                     ),
                   ),
-                  if (fileSize.isNotEmpty)
-                    Text(
-                      fileSize,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontSize: 10,
-                        color: AppThemeColors.textMuted,
-                      ),
-                    ),
-                ],
-              ),
+              ],
             ),
-            const SizedBox(width: 12),
-            Icon(
-              CupertinoIcons.arrow_down_to_line,
-              size: 16,
-              color: AppThemeColors.textSoft,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

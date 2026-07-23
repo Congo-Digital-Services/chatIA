@@ -858,6 +858,8 @@ class LibreChatApiService {
       isPinned: false,
       agentId: json['agent_id']?.toString(),
       heroAssetLabel: null,
+      updatedAt: DateTime.tryParse(json['updatedAt']?.toString() ?? ''),
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
       type: type == 'note'
           ? ConversationType.note
           : type == 'channel'

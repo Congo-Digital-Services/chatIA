@@ -8,7 +8,6 @@ import '../../../features/auth/providers/auth_state_provider.dart';
 import '../../../shared/models/conversation.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_toast.dart';
-import '../../../shared/widgets/conduit_card.dart';
 import '../../../shared/widgets/conversation_drawer.dart';
 import '../providers/chat_state_provider.dart';
 import '../widgets/chat_composer.dart';
@@ -86,7 +85,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final chatController = ref.read(chatControllerProvider);
-      chatController.resetForFreshStart();
       chatController.loadConversations();
     });
   }
@@ -159,78 +157,66 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             bottom: false,
             child: Column(
               children: [
-                // ── Header ──────────────────────────────────────────────────────
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-                  child: Row(
-                    children: [
-                      // Menu
-                      _HeaderButton(
-                        icon: CupertinoIcons.line_horizontal_3,
-                        onTap: () => _scaffoldKey.currentState?.openDrawer(),
-                        tooltip: 'Menu',
-                      ),
-                      const Spacer(),
-                      Image.asset(
-                        'assets/icons/congo_logo.png',
-                        height: 36,
-                        fit: BoxFit.contain,
-                      ),
-                      const Spacer(),
-                      // Nouvelle conversation / note
-                      _HeaderButton(
-                        icon: isNote
-                            ? CupertinoIcons.doc_append
-                            : CupertinoIcons.square_pencil,
-                        onTap: () {
-                          if (isNote) {
-                            ref.read(chatControllerProvider).createNote();
-                          } else {
-                            ref
-                                .read(chatControllerProvider)
-                                .createConversation();
-                          }
-                        },
-                        tooltip: isNote
-                            ? 'Nouvelle note'
-                            : 'Nouvelle conversation',
-                      ),
-                    ],
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  child: _TopShellBar(
+                    onMenuTap: () => _scaffoldKey.currentState?.openDrawer(),
+                    onComposeTap: () {
+                      if (isNote) {
+                        ref.read(chatControllerProvider).createNote();
+                        return;
+                      }
+                      ref.read(chatControllerProvider).createConversation();
+                    },
+                    isBusy: chat.isLoading || chat.isStreaming,
                   ),
                 ),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  child: chat.isLoading
-                      ? const Padding(
-                          key: ValueKey('chat-loading-bar'),
-                          padding: EdgeInsets.fromLTRB(14, 0, 14, 12),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.all(Radius.circular(99)),
-                            child: LinearProgressIndicator(minHeight: 4),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-                // ── Corps ────────────────────────────────────────────────────────
                 Expanded(
-                  child: isNote
-                      ? _NoteEditor(
-                          key: ValueKey(conversation.id),
-                          conversation: conversation,
-                        )
-                      : _ConversationBody(
-                          chat: chat,
-                          conversation: conversation,
-                          theme: theme,
-                          scrollController: _scrollController,
+                  child: Container(
+                    color: AppThemeColors.background,
+                    child: Column(
+                      children: [
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 160),
+                          child: chat.isLoading
+                              ? Container(
+                                  key: const ValueKey('top-progress'),
+                                  margin: const EdgeInsets.fromLTRB(
+                                    20,
+                                    6,
+                                    20,
+                                    0,
+                                  ),
+                                  height: 2,
+                                  color: AppThemeColors.strokeStrong,
+                                )
+                              : const SizedBox.shrink(),
                         ),
+                        Expanded(
+                          child: isNote
+                              ? _NoteEditor(
+                                  key: ValueKey(conversation.id),
+                                  conversation: conversation,
+                                )
+                              : _ConversationBody(
+                                  chat: chat,
+                                  conversation: conversation,
+                                  theme: theme,
+                                  scrollController: _scrollController,
+                                  userName: auth.session?.userName ?? 'Sylvia',
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                // ── Composer ─────────────────────────────────────────────────────
                 if (!isNote)
                   ChatComposer(
                     onSend: (value) =>
                         ref.read(chatControllerProvider).sendMessage(value),
                     userName: auth.session?.userName ?? 'Utilisateur',
+                    isAwaitingResponse: chat.isAwaitingResponse,
+                    isRenderingResponse: chat.isRenderingResponse,
                   ),
               ],
             ),
@@ -251,50 +237,117 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 }
 
-// ── État vide ────────────────────────────────────────────────────────────────
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.theme});
+class _TopShellBar extends StatelessWidget {
+  const _TopShellBar({
+    required this.onMenuTap,
+    required this.onComposeTap,
+    required this.isBusy,
+  });
 
-  final ThemeData theme;
+  final VoidCallback onMenuTap;
+  final VoidCallback onComposeTap;
+  final bool isBusy;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Row(
+      children: [
+        _HeaderButton(
+          icon: CupertinoIcons.line_horizontal_3,
+          onTap: onMenuTap,
+          tooltip: 'Menu',
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppThemeColors.backgroundSoft,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: AppThemeColors.surface,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Image.asset(
+                    'assets/icons/congo_logo.png',
+                    fit: BoxFit.contain,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'LoBa IA',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        _HeaderButton(
+          icon: CupertinoIcons.square_pencil,
+          onTap: onComposeTap,
+          tooltip: 'Nouvelle conversation',
+        ),
+      ],
+    );
+  }
+}
+
+class _EmptyState extends ConsumerWidget {
+  const _EmptyState({required this.theme, required this.userName});
+
+  final ThemeData theme;
+  final String userName;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              width: 56,
-              height: 56,
+              width: 72,
+              height: 72,
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppThemeColors.card,
-                borderRadius: BorderRadius.circular(18),
+                color: AppThemeColors.surface,
+                borderRadius: BorderRadius.circular(24),
                 border: Border.all(color: AppThemeColors.stroke),
               ),
-              child: Icon(
-                CupertinoIcons.chat_bubble_2,
-                color: AppThemeColors.textMuted,
+              child: Image.asset(
+                'assets/icons/congo_logo.png',
+                fit: BoxFit.contain,
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 24),
             Text(
-              'Nouvelle conversation',
+              'Bonjour $userName, que souhaitez-vous créer aujourd\'hui ?',
               textAlign: TextAlign.center,
-              style: theme.textTheme.headlineLarge?.copyWith(
-                fontSize: 28,
-                height: 1.2,
-              ),
+              style: theme.textTheme.headlineMedium?.copyWith(height: 1.2),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Text(
-              'Aucun historique local. Envoyez un premier message pour démarrer.',
+              'Commencez votre message ci-dessous.',
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyLarge?.copyWith(
+              style: theme.textTheme.bodyMedium?.copyWith(
                 color: AppThemeColors.textSoft,
-                height: 1.5,
               ),
             ),
           ],
@@ -310,19 +363,21 @@ class _ConversationBody extends StatelessWidget {
     required this.conversation,
     required this.theme,
     required this.scrollController,
+    required this.userName,
   });
 
   final ChatController chat;
   final Conversation conversation;
   final ThemeData theme;
   final ScrollController scrollController;
+  final String userName;
 
   @override
   Widget build(BuildContext context) {
     if (chat.isSelectedConversationLoading &&
         conversation.messages.isEmpty &&
         !chat.hasLoadedSelectedConversation) {
-      return const Center(child: CircularProgressIndicator.adaptive());
+      return const _ConversationSkeleton();
     }
 
     if (chat.selectedConversationErrorMessage != null &&
@@ -333,22 +388,21 @@ class _ConversationBody extends StatelessWidget {
     }
 
     if (conversation.messages.isEmpty) {
-      return _EmptyState(theme: theme);
+      return _EmptyState(theme: theme, userName: userName);
     }
 
     final itemCount =
         conversation.messages.length +
-        (conversation.heroAssetLabel != null ? 1 : 0) +
         (chat.isSelectedConversationLoadingMore ? 1 : 0);
 
     return ListView.builder(
       controller: scrollController,
-      padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
+      padding: const EdgeInsets.fromLTRB(18, 22, 18, 120),
       itemCount: itemCount,
       itemBuilder: (context, index) {
         if (index < conversation.messages.length) {
           return Padding(
-            padding: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.only(bottom: 18),
             child: MessageBubble(
               message: conversation.messages[index],
               conversation: conversation,
@@ -358,20 +412,28 @@ class _ConversationBody extends StatelessWidget {
 
         if (chat.isSelectedConversationLoadingMore &&
             index == conversation.messages.length) {
-          return const Padding(
-            padding: EdgeInsets.only(bottom: 16),
-            child: Center(child: CircularProgressIndicator.adaptive()),
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 18),
+            child: Center(
+              child: Container(
+                width: 36,
+                height: 36,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppThemeColors.surface,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppThemeColors.stroke),
+                ),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  color: AppThemeColors.accent,
+                ),
+              ),
+            ),
           );
         }
 
-        return Column(
-          children: [
-            _HeroCard(theme: theme),
-            const SizedBox(height: 12),
-            const _InlineActionRow(),
-            const SizedBox(height: 24),
-          ],
-        );
+        return const SizedBox.shrink();
       },
     );
   }
@@ -389,47 +451,63 @@ class _ConversationErrorState extends ConsumerWidget {
 
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              CupertinoIcons.exclamationmark_triangle,
-              color: AppThemeColors.textMuted,
-              size: 32,
-            ),
-            const SizedBox(height: 14),
-            Text(
-              'Impossible de charger la conversation',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: AppThemeColors.textSoft,
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: AppThemeColors.surface,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: AppThemeColors.stroke),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: AppThemeColors.danger.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Icon(
+                  CupertinoIcons.exclamationmark_triangle_fill,
+                  color: AppThemeColors.danger,
+                  size: 24,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: chat.isSelectedConversationLoading
-                  ? null
-                  : () {
-                      ref
-                          .read(chatControllerProvider)
-                          .retrySelectedConversation();
-                    },
-              child: chat.isSelectedConversationLoading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2.2),
-                    )
-                  : const Text('Réessayer'),
-            ),
-          ],
+              const SizedBox(height: 16),
+              Text(
+                'Impossible de charger la conversation',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleLarge,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: AppThemeColors.textSoft,
+                ),
+              ),
+              const SizedBox(height: 18),
+              FilledButton(
+                onPressed: chat.isSelectedConversationLoading
+                    ? null
+                    : () {
+                        ref
+                            .read(chatControllerProvider)
+                            .retrySelectedConversation();
+                      },
+                child: chat.isSelectedConversationLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2.2),
+                      )
+                    : const Text('Réessayer'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -450,21 +528,16 @@ class _HeaderButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final button = Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(22),
+      color: AppThemeColors.backgroundSoft,
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(14),
         onTap: onTap,
         child: SizedBox(
-          width: 44,
-          height: 44,
-          child: Icon(
-            icon,
-            size: 22,
-            color: isDark ? Colors.white : Colors.black,
-          ),
+          width: 40,
+          height: 40,
+          child: Icon(icon, size: 18, color: AppThemeColors.textStrong),
         ),
       ),
     );
@@ -477,136 +550,62 @@ class _HeaderButton extends StatelessWidget {
   }
 }
 
-// ── Hero card (image générée) ────────────────────────────────────────────────
-class _HeroCard extends StatelessWidget {
-  const _HeroCard({required this.theme});
-
-  final ThemeData theme;
+class _ConversationSkeleton extends StatelessWidget {
+  const _ConversationSkeleton();
 
   @override
   Widget build(BuildContext context) {
-    return ConduitCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 360,
-            decoration: const BoxDecoration(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-              gradient: LinearGradient(
-                colors: [
-                  Color(0xFF1A1A2E),
-                  Color(0xFF16213E),
-                  Color(0xFF0F3460),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            child: const Center(
-              child: Icon(
-                CupertinoIcons.photo_fill_on_rectangle_fill,
-                size: 64,
-                color: Colors.white38,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 6),
-            child: Text(
-              'Image générée  ›',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: AppThemeColors.textMuted,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
-            child: Text(
-              'Votre image a été créée avec succès — elle s\'affiche ci-dessus.',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w400,
-                height: 1.4,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Ligne d'actions inline ───────────────────────────────────────────────────
-class _InlineActionRow extends StatelessWidget {
-  const _InlineActionRow();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        _ActionBtn(
-          icon: CupertinoIcons.speaker_2_fill,
-          label: 'Lire',
-          onTap: () {},
-        ),
-        const SizedBox(width: 8),
-        _ActionBtn(
-          icon: CupertinoIcons.doc_on_doc,
-          label: 'Copier',
-          onTap: () {},
-        ),
-        const SizedBox(width: 8),
-        _ActionBtn(
-          icon: CupertinoIcons.arrow_clockwise,
-          label: 'Régénérer',
-          onTap: () {},
-        ),
-        const SizedBox(width: 8),
-        _ActionBtn(icon: CupertinoIcons.share, label: 'Partager', onTap: () {}),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 22, 18, 12),
+      children: const [
+        _SkeletonBubble(isUser: false, lines: [180, 220, 140]),
+        SizedBox(height: 18),
+        _SkeletonBubble(isUser: true, lines: [150]),
+        SizedBox(height: 18),
+        _SkeletonBubble(isUser: false, lines: [210, 170, 190, 120]),
       ],
     );
   }
 }
 
-class _ActionBtn extends StatelessWidget {
-  const _ActionBtn({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
+class _SkeletonBubble extends StatelessWidget {
+  const _SkeletonBubble({required this.isUser, required this.lines});
 
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
+  final bool isUser;
+  final List<double> lines;
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final button = Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(22),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(22),
-        onTap: onTap,
-        child: SizedBox(
-          width: 44,
-          height: 44,
-          child: Icon(
-            icon,
-            size: 20,
-            color: isDark ? Colors.white70 : Colors.black54,
-          ),
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        width: 250,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppThemeColors.surface,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: AppThemeColors.stroke),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: lines
+              .map(
+                (width) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Container(
+                    width: width,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: AppThemeColors.pill,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
         ),
       ),
     );
-
-    if (label.isEmpty) {
-      return button;
-    }
-
-    return Tooltip(message: label, excludeFromSemantics: true, child: button);
   }
 }
 

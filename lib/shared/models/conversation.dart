@@ -12,6 +12,8 @@ class Conversation {
     required this.messages,
     this.agentId,
     this.heroAssetLabel,
+    this.updatedAt,
+    this.createdAt,
     this.type = ConversationType.chat,
   });
 
@@ -22,6 +24,8 @@ class Conversation {
   final bool isPinned;
   final String? heroAssetLabel;
   final String? agentId;
+  final DateTime? updatedAt;
+  final DateTime? createdAt;
   final List<ChatMessage> messages;
   final ConversationType type;
 
@@ -33,6 +37,8 @@ class Conversation {
     bool? isPinned,
     String? agentId,
     String? heroAssetLabel,
+    DateTime? updatedAt,
+    DateTime? createdAt,
     List<ChatMessage>? messages,
     ConversationType? type,
   }) {
@@ -44,6 +50,8 @@ class Conversation {
       isPinned: isPinned ?? this.isPinned,
       agentId: agentId ?? this.agentId,
       heroAssetLabel: heroAssetLabel ?? this.heroAssetLabel,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdAt: createdAt ?? this.createdAt,
       messages: messages ?? this.messages,
       type: type ?? this.type,
     );

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+
 enum AppToastType { success, error, warning, info }
 
 void showAppToast(
@@ -15,37 +17,56 @@ void showAppToast(
     ..showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
-        elevation: 0,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
         padding: EdgeInsets.zero,
+        elevation: 0,
         backgroundColor: Colors.transparent,
         duration: Duration(seconds: type == AppToastType.error ? 4 : 3),
         content: Container(
           decoration: BoxDecoration(
-            color: style.backgroundColor,
+            color: AppThemeColors.cardStrong,
             borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.18),
-                blurRadius: 22,
-                offset: const Offset(0, 10),
-              ),
-            ],
+            border: Border.all(color: style.borderColor),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(style.icon, color: Colors.white, size: 22),
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: style.iconBackground,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(style.icon, color: style.iconColor, size: 16),
+              ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  message,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    height: 1.35,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      style.title,
+                      style: TextStyle(
+                        color: AppThemeColors.textStrong,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      message,
+                      style: TextStyle(
+                        color: AppThemeColors.textSoft,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -55,27 +76,46 @@ void showAppToast(
     );
 }
 
-({Color backgroundColor, IconData icon}) _toastStyle(AppToastType type) {
+({
+  Color borderColor,
+  Color iconBackground,
+  Color iconColor,
+  IconData icon,
+  String title,
+})
+_toastStyle(AppToastType type) {
   switch (type) {
     case AppToastType.success:
       return (
-        backgroundColor: const Color(0xFF0F7B6C),
-        icon: Icons.check_circle_outline_rounded,
+        borderColor: AppThemeColors.strokeStrong,
+        iconBackground: AppThemeColors.pill,
+        iconColor: AppThemeColors.success,
+        icon: Icons.check_rounded,
+        title: 'Info',
       );
     case AppToastType.error:
       return (
-        backgroundColor: const Color(0xFF8E2424),
-        icon: Icons.error_outline_rounded,
+        borderColor: AppThemeColors.strokeStrong,
+        iconBackground: AppThemeColors.pill,
+        iconColor: AppThemeColors.danger,
+        icon: Icons.close_rounded,
+        title: 'Erreur',
       );
     case AppToastType.warning:
       return (
-        backgroundColor: const Color(0xFF9A5C0A),
-        icon: Icons.warning_amber_rounded,
+        borderColor: AppThemeColors.strokeStrong,
+        iconBackground: AppThemeColors.pill,
+        iconColor: AppThemeColors.warning,
+        icon: Icons.priority_high_rounded,
+        title: 'Info',
       );
     case AppToastType.info:
       return (
-        backgroundColor: const Color(0xFF24538E),
-        icon: Icons.info_outline_rounded,
+        borderColor: AppThemeColors.strokeStrong,
+        iconBackground: AppThemeColors.pill,
+        iconColor: AppThemeColors.info,
+        icon: Icons.auto_awesome_rounded,
+        title: 'Info',
       );
   }
 }
