@@ -136,6 +136,12 @@ class ChatController extends ChangeNotifier {
           _selectedConversation = visibleResults.first;
           await _persistSelectedConversationId(_selectedConversation.id);
         }
+        if (_selectedConversation.id != _draftConversationId) {
+          await _loadConversationMessages(
+            _selectedConversation.id,
+            reset: true,
+          );
+        }
       } else {
         _conversations = const [];
         _selectedConversation = _createDraftConversation();
@@ -719,7 +725,7 @@ class ChatController extends ChangeNotifier {
   }) {
     final userMessage = ChatMessage.user(
       id: _uuidV4(),
-      text: 'Message vocal ($durationText)',
+      text: 'Transcription du message vocal…',
       audioUrl: audioUrl,
     );
     final assistantId = _uuidV4();
@@ -734,19 +740,13 @@ class ChatController extends ChangeNotifier {
       return Future.value();
     }
 
-    return _uploadAttachedFile(
+    return _transcribeAndSendVoiceMessage(
       assistantId: assistantId,
       userMessageId: userMessage.id,
-      promptText: 'Analyse ce message vocal.',
       bytes: bytes,
-      filename: name ?? 'voice-message.webm',
-      size: durationText,
-      isImage: false,
+      filename: name ?? 'voice-message.m4a',
+      durationText: durationText,
       mimeType: mimeType,
-      errorPrefix: 'Erreur analyse audio',
-      uploadErrorLabel: 'Erreur d\'upload audio',
-      fallbackToTranscription: true,
-      fallbackDurationText: durationText,
     );
   }
 
@@ -908,6 +908,73 @@ class ChatController extends ChangeNotifier {
       );
     } finally {
       isStreaming = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _transcribeAndSendVoiceMessage({
+    required String assistantId,
+    required String userMessageId,
+    required List<int> bytes,
+    required String filename,
+    required String durationText,
+    String? mimeType,
+  }) async {
+    try {
+      isStreaming = true;
+      _hasStreamingResponseStarted = false;
+      errorMessage = null;
+      infoMessage = null;
+      notifyListeners();
+
+      final transcript = await _apiService.transcribeSpeech(
+        bytes: bytes,
+        filename: filename,
+      );
+      final cleaned = transcript.trim();
+      if (cleaned.isEmpty) {
+        throw Exception('Aucune transcription reçue pour ce message vocal.');
+      }
+
+      _updateMessage(
+        userMessageId,
+        (message) =>
+            message.copyWith(text: cleaned, audioUrl: message.audioUrl),
+        subtitle: cleaned,
+      );
+
+      _ensureConversationMatchesAgent(BackendConfig.chatAgentId);
+      final parentMessageId = _parentMessageId(_selectedConversation);
+      final conversationId = _serverConversationId(_selectedConversation.id);
+
+      await _consumeChatStream(
+        assistantId: assistantId,
+        stream: _apiService.sendAgentChat(
+          agentId: BackendConfig.chatAgentId,
+          spec: BackendConfig.chatSpec,
+          conversationId: conversationId,
+          parentMessageId: parentMessageId,
+          messageId: _uuidV4(),
+          text: cleaned,
+        ),
+        errorPrefix: 'Erreur analyse audio',
+      );
+    } catch (error) {
+      errorMessage = error.toString();
+      infoMessage = null;
+      _updateMessage(
+        userMessageId,
+        (message) => message.copyWith(
+          text: 'Message vocal ($durationText)',
+          audioUrl: message.audioUrl,
+        ),
+      );
+      _updateAssistantMessage(
+        assistantId,
+        'Erreur analyse audio : ${error.toString()}',
+      );
+      isStreaming = false;
+      _hasStreamingResponseStarted = false;
       notifyListeners();
     }
   }

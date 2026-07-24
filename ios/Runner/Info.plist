@@ -26,6 +26,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>ChatIA utilise le microphone pour enregistrer et transcrire vos messages vocaux.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

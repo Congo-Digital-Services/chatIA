@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <!-- Accès caméra (optionnel — pour prendre une photo directement) -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Enregistrement vocal -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <application
         android:label="ChatIA"
         android:name="${applicationName}"
