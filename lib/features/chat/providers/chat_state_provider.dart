@@ -3,7 +3,6 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/constants/backend_config.dart';
 import '../../../core/services/chatia_api_service.dart';
@@ -23,8 +22,6 @@ class ChatController extends ChangeNotifier {
 
   final ChatiaApiService _apiService;
   static const _draftConversationId = '__draft__';
-  static const _selectedConversationStorageKey =
-      'chatia.selected_conversation_id';
 
   late List<Conversation> _conversations;
   late Conversation _selectedConversation;
@@ -119,33 +116,15 @@ class ChatController extends ChangeNotifier {
           )
           .toList();
       final visibleResults = await _filterEmptyBackendConversations(results);
-      final persistedConversationId = await _restoreSelectedConversationId();
 
       if (visibleResults.isNotEmpty) {
         _conversations = visibleResults;
-        final preferredId = _selectedConversation.id != _draftConversationId
-            ? _selectedConversation.id
-            : persistedConversationId;
-        final restored = preferredId == null
-            ? null
-            : _findConversationById(visibleResults, preferredId);
-        if (restored != null) {
-          _selectedConversation = restored;
-          await _persistSelectedConversationId(restored.id);
-        } else {
-          _selectedConversation = visibleResults.first;
-          await _persistSelectedConversationId(_selectedConversation.id);
-        }
         if (_selectedConversation.id != _draftConversationId) {
-          await _loadConversationMessages(
-            _selectedConversation.id,
-            reset: true,
-          );
+          _selectedConversation = _createDraftConversation();
         }
       } else {
         _conversations = const [];
         _selectedConversation = _createDraftConversation();
-        await _clearSelectedConversationId();
       }
     } catch (error) {
       errorMessage = error.toString();
@@ -160,7 +139,6 @@ class ChatController extends ChangeNotifier {
     bool forceReload = false,
   }) async {
     _selectedConversation = conversation;
-    unawaited(_persistSelectedConversationId(conversation.id));
     notifyListeners();
 
     if (!_apiService.isAvailable ||
@@ -298,7 +276,6 @@ class ChatController extends ChangeNotifier {
             ? _conversations.length - 1
             : index;
         _selectedConversation = _conversations[nextIndex];
-        unawaited(_persistSelectedConversationId(_selectedConversation.id));
       } else {
         createConversation();
       }
@@ -373,7 +350,6 @@ class ChatController extends ChangeNotifier {
 
   void createConversation() {
     _selectedConversation = _createDraftConversation();
-    unawaited(_clearSelectedConversationId());
     notifyListeners();
   }
 
@@ -400,7 +376,6 @@ class ChatController extends ChangeNotifier {
     }
 
     _selectedConversation = _createDraftConversation(agentId: agentId);
-    unawaited(_clearSelectedConversationId());
     notifyListeners();
   }
 
@@ -1163,7 +1138,6 @@ class ChatController extends ChangeNotifier {
     if (_selectedConversation.id == oldId) {
       _selectedConversation = _selectedConversation.copyWith(id: newId);
     }
-    unawaited(_persistSelectedConversationId(_selectedConversation.id));
     notifyListeners();
   }
 
@@ -1304,48 +1278,5 @@ class ChatController extends ChangeNotifier {
     errorMessage = null;
     infoMessage = null;
     notifyListeners();
-  }
-
-  Conversation? _findConversationById(
-    List<Conversation> source,
-    String conversationId,
-  ) {
-    for (final conversation in source) {
-      if (conversation.id == conversationId) {
-        return conversation;
-      }
-    }
-    return null;
-  }
-
-  Future<void> _persistSelectedConversationId(String conversationId) async {
-    if (conversationId.isEmpty || conversationId == _draftConversationId) {
-      await _clearSelectedConversationId();
-      return;
-    }
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_selectedConversationStorageKey, conversationId);
-    } catch (_) {}
-  }
-
-  Future<String?> _restoreSelectedConversationId() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final value = prefs.getString(_selectedConversationStorageKey)?.trim();
-      if (value == null || value.isEmpty) {
-        return null;
-      }
-      return value;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> _clearSelectedConversationId() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_selectedConversationStorageKey);
-    } catch (_) {}
   }
 }
