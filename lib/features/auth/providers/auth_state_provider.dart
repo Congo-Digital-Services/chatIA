@@ -107,11 +107,6 @@ class AuthController extends ChangeNotifier {
       final result = await _service.signIn(email: email, password: password);
       session = result;
       _libreChatSession.hydrateSession(result);
-      if (kDebugMode) {
-        debugPrint(
-          '[AuthController][signIn] success user=${result.userName} email=${result.email}',
-        );
-      }
     } catch (error) {
       if (kDebugMode) {
         debugPrint('[AuthController][signIn] error=$error');
@@ -143,21 +138,18 @@ class AuthController extends ChangeNotifier {
     required String confirmPassword,
   }) async {
     if (isLoading) return;
-
     try {
       isLoading = true;
       errorMessage = null;
       infoMessage = null;
       notifyListeners();
-
-      final message = await _service.register(
+      infoMessage = await _service.register(
         name: name,
         username: username,
         email: email,
         password: password,
         confirmPassword: confirmPassword,
       );
-      infoMessage = message;
     } catch (error) {
       errorMessage = error.toString().replaceFirst('Exception: ', '');
     } finally {

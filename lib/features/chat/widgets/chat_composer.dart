@@ -9,10 +9,10 @@ import '../../../core/services/file_picker.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../providers/chat_state_provider.dart';
-
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
 class ChatComposer extends ConsumerStatefulWidget {
   const ChatComposer({
-    super.key,
+    super.key, 
     required this.onSend,
     required this.userName,
     required this.isAwaitingResponse,
