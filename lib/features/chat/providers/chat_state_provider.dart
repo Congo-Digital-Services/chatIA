@@ -9,6 +9,8 @@ import '../../../core/services/chatia_api_service.dart';
 import '../../../shared/models/chat_message.dart';
 import '../../../shared/models/conversation.dart';
 
+enum ChatMode { discussion, health }
+
 final chatControllerProvider = ChangeNotifierProvider<ChatController>((ref) {
   final apiService = ref.watch(chatiaApiProvider);
   return ChatController(apiService);
@@ -565,7 +567,7 @@ class ChatController extends ChangeNotifier {
     if (!_apiService.isAvailable) {
       _updateAssistantMessage(
         assistantId,
-        'Réponse mockée Conduit. Cette couche UI est prête à être branchée plus tard sur un backend réel ou sur des appels outils.',
+        'Session expirée. Veuillez vous reconnecter pour continuer à discuter.',
       );
       return;
     }
@@ -612,7 +614,7 @@ class ChatController extends ChangeNotifier {
     if (!_apiService.isAvailable) {
       _updateAssistantMessage(
         assistantId,
-        'Agent non disponible (pas de token). Réponse mockée.',
+        'Session expirée. Veuillez vous reconnecter pour continuer à discuter.',
       );
       return;
     }
@@ -697,6 +699,7 @@ class ChatController extends ChangeNotifier {
     List<int>? bytes,
     String? mimeType,
     String? name,
+    String? agentId,
   }) {
     final userMessage = ChatMessage.user(
       id: _uuidV4(),
@@ -722,6 +725,7 @@ class ChatController extends ChangeNotifier {
       filename: name ?? 'voice-message.m4a',
       durationText: durationText,
       mimeType: mimeType,
+      agentId: agentId,
     );
   }
 
@@ -894,6 +898,7 @@ class ChatController extends ChangeNotifier {
     required String filename,
     required String durationText,
     String? mimeType,
+    String? agentId,
   }) async {
     try {
       isStreaming = true;
@@ -918,14 +923,18 @@ class ChatController extends ChangeNotifier {
         subtitle: cleaned,
       );
 
-      _ensureConversationMatchesAgent(BackendConfig.chatAgentId);
+      final resolvedAgentId =
+          agentId?.trim().isNotEmpty == true
+          ? agentId!.trim()
+          : BackendConfig.chatAgentId;
+      _ensureConversationMatchesAgent(resolvedAgentId);
       final parentMessageId = _parentMessageId(_selectedConversation);
       final conversationId = _serverConversationId(_selectedConversation.id);
 
       await _consumeChatStream(
         assistantId: assistantId,
         stream: _apiService.sendAgentChat(
-          agentId: BackendConfig.chatAgentId,
+          agentId: resolvedAgentId,
           spec: BackendConfig.chatSpec,
           conversationId: conversationId,
           parentMessageId: parentMessageId,

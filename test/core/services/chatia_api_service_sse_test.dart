@@ -216,6 +216,108 @@ void main() {
   });
 
   test(
+    'transcribeSpeech posts audio multipart and reads JSON text response',
+    () async {
+      AuthSession? session = _session();
+
+      final sessionService = _buildSessionService(
+        readSession: () => session,
+        writeSession: (value) async => session = value,
+        clearSession: () async => session = null,
+        onSend: (request) async {
+          final multipart = request as http.MultipartRequest;
+
+          expect(multipart.method, 'POST');
+          expect(multipart.url.path, '/api/files/speech/stt');
+          expect(multipart.files, hasLength(1));
+          expect(multipart.files.single.field, 'audio');
+          expect(multipart.files.single.filename, 'voice_123.m4a');
+          expect(multipart.files.single.contentType?.mimeType, 'audio/mp4');
+
+          return _jsonResponse({'text': 'Bonjour à tous'});
+        },
+      );
+
+      final api = ChatiaApiService(
+        baseUrl: 'http://localhost:3080',
+        sessionService: sessionService,
+      );
+
+      final transcription = await api.transcribeSpeech(
+        bytes: const [1, 2, 3],
+        filename: 'voice_123.m4a',
+      );
+
+      expect(transcription, 'Bonjour à tous');
+    },
+  );
+
+  test(
+    'transcribeSpeech accepts plain text body as transcription',
+    () async {
+      AuthSession? session = _session();
+
+      final sessionService = _buildSessionService(
+        readSession: () => session,
+        writeSession: (value) async => session = value,
+        clearSession: () async => session = null,
+        onSend: (request) async {
+          expect(request.url.path, '/api/files/speech/stt');
+          final bytes = utf8.encode('Bonjour les amis');
+          return http.StreamedResponse(
+            Stream<List<int>>.value(bytes),
+            200,
+            headers: {'content-type': 'text/plain'},
+          );
+        },
+      );
+
+      final api = ChatiaApiService(
+        baseUrl: 'http://localhost:3080',
+        sessionService: sessionService,
+      );
+
+      final transcription = await api.transcribeSpeech(
+        bytes: const [1, 2, 3],
+        filename: 'voice_123.m4a',
+      );
+
+      expect(transcription, 'Bonjour les amis');
+    },
+  );
+
+  test(
+    'transcribeSpeech accepts SSE streamed transcription',
+    () async {
+      AuthSession? session = _session();
+
+      final sessionService = _buildSessionService(
+        readSession: () => session,
+        writeSession: (value) async => session = value,
+        clearSession: () async => session = null,
+        onSend: (request) async {
+          expect(request.url.path, '/api/files/speech/stt');
+          return _sseResponse(
+            'event: transcribe\ndata: {"text":"Allo le monde"}\n\n',
+          );
+        },
+      );
+
+      final api = ChatiaApiService(
+        baseUrl: 'http://localhost:3080',
+        sessionService: sessionService,
+      );
+
+      final transcription = await api.transcribeSpeech(
+        bytes: const [1, 2, 3],
+        filename: 'voice_123.m4a',
+      );
+
+      expect(transcription, 'Allo le monde');
+    },
+  );
+
+  test(
     'streamChat rebuilds final text from responseMessage.content blocks',
     () async {
       AuthSession? session = _session();

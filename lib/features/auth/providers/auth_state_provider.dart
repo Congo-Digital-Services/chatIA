@@ -16,7 +16,17 @@ final authControllerProvider = ChangeNotifierProvider<AuthController>((ref) {
 });
 
 class AuthController extends ChangeNotifier {
-  AuthController(this._service, this._storage, this._libreChatSession);
+  AuthController(this._service, this._storage, this._libreChatSession) {
+    _libreChatSession.onSessionInvalidated = () {
+      if (session == null) {
+        return;
+      }
+      session = null;
+      errorMessage = null;
+      infoMessage = null;
+      notifyListeners();
+    };
+  }
 
   static const _resetAuthOnStart = bool.fromEnvironment(
     'RESET_AUTH_ON_START',
@@ -150,6 +160,43 @@ class AuthController extends ChangeNotifier {
         password: password,
         confirmPassword: confirmPassword,
       );
+    } catch (error) {
+      errorMessage = error.toString().replaceFirst('Exception: ', '');
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> verifyEmail({required String email, required String token}) =>
+      _runMessageAction(() => _service.verifyEmail(email: email, token: token));
+
+  Future<void> resendVerificationEmail(String email) =>
+      _runMessageAction(() => _service.resendVerificationEmail(email: email));
+
+  Future<void> requestPasswordReset(String email) =>
+      _runMessageAction(() => _service.requestPasswordReset(email: email));
+
+  Future<void> resetPassword({
+    required String userId,
+    required String token,
+    required String password,
+  }) => _runMessageAction(
+    () => _service.resetPassword(
+      userId: userId,
+      token: token,
+      password: password,
+    ),
+  );
+
+  Future<void> _runMessageAction(Future<String> Function() action) async {
+    if (isLoading) return;
+    try {
+      isLoading = true;
+      errorMessage = null;
+      infoMessage = null;
+      notifyListeners();
+      infoMessage = await action();
     } catch (error) {
       errorMessage = error.toString().replaceFirst('Exception: ', '');
     } finally {

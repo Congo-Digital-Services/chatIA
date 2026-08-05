@@ -31,6 +31,21 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Liens de vérification et de réinitialisation LibreChat. La
+                 validation finale exige assetlinks.json sur le domaine. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="loba-ia.congo-digital.com"
+                    android:pathPrefix="/verify" />
+                <data
+                    android:scheme="https"
+                    android:host="loba-ia.congo-digital.com"
+                    android:pathPrefix="/reset-password" />
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

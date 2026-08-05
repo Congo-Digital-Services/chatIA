@@ -33,7 +33,12 @@ class BackendConfig {
 
   static const chatAgentId = String.fromEnvironment(
     'CHATIA_CHAT_AGENT_ID',
-    defaultValue: 'agent_3ncfvg51a3BXyZcQv3cjE',
+    defaultValue: 'agent_0WYc05eqWR1b3aJCqmizj',
+  );
+
+  static const healthAgentId = String.fromEnvironment(
+    'CHATIA_HEALTH_AGENT_ID',
+    defaultValue: 'agent_0WYc05eqWR1b3aJCqmizj',
   );
 
   static const userAgent =

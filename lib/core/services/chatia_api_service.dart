@@ -209,7 +209,11 @@ class ChatiaApiService {
         ? (jsonBody['conversations'] as List<dynamic>?) ?? []
         : (jsonBody as List<dynamic>);
 
-    return items.cast<Map<String, dynamic>>().map(_mapApiConversation).toList();
+    return items
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .map(_mapApiConversation)
+        .toList();
   }
 
   Future<Conversation> fetchConversation(String conversationId) async {
@@ -264,7 +268,11 @@ class ChatiaApiService {
         : null;
 
     return PaginatedMessagesResponse(
-      messages: items.cast<Map<String, dynamic>>().map(_mapApiMessage).toList(),
+      messages: items
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .map(_mapApiMessage)
+          .toList(),
       nextCursor: nextCursor,
     );
   }
@@ -528,7 +536,7 @@ class ChatiaApiService {
     required List<int> bytes,
     required String filename,
   }) async {
-    final data = await _sendMultipartJson(
+    final body = await _sendMultipartBody(
       path: '/api/files/speech/stt',
       fileField: 'audio',
       bytes: bytes,
@@ -536,13 +544,100 @@ class ChatiaApiService {
       fields: const {},
     );
 
-    return data['text']?.toString() ??
-        data['transcript']?.toString() ??
-        data['message']?.toString() ??
-        '';
+    final transcription = _extractTranscription(body);
+    if (transcription.trim().isNotEmpty) {
+      return transcription.trim();
+    }
+
+    throw Exception(
+      'Réponse API inattendue pour /api/files/speech/stt : '
+      '${body.isEmpty ? '(vide)' : body}',
+    );
+  }
+
+  String _extractTranscription(String body) {
+    var candidate = body.trim();
+    if (candidate.isEmpty) {
+      return '';
+    }
+
+    if (candidate.startsWith('event:') || candidate.contains('\ndata:')) {
+      final buffer = StringBuffer();
+      for (final line in const LineSplitter().convert(candidate)) {
+        final trimmed = line.trim();
+        if (trimmed.startsWith('data:')) {
+          buffer.writeln(trimmed.substring(5).trim());
+        }
+      }
+      candidate = buffer.toString().trim();
+      if (candidate.isEmpty) {
+        return '';
+      }
+    }
+
+    Object? decoded;
+    try {
+      decoded = jsonDecode(candidate);
+    } catch (_) {
+      return candidate;
+    }
+
+    if (decoded is Map) {
+      for (final key in const [
+        'text',
+        'transcript',
+        'transcription',
+        'message',
+        'result',
+      ]) {
+        final value = decoded[key];
+        if (value is String && value.trim().isNotEmpty) {
+          return value.trim();
+        }
+        if (value != null) {
+          return value.toString().trim();
+        }
+      }
+      return '';
+    }
+
+    if (decoded is String) {
+      return decoded.trim();
+    }
+
+    return '';
   }
 
   Future<Map<String, dynamic>> _sendMultipartJson({
+    required String path,
+    required String fileField,
+    required List<int> bytes,
+    required String filename,
+    required Map<String, String> fields,
+  }) async {
+    final body = await _sendMultipartBody(
+      path: path,
+      fileField: fileField,
+      bytes: bytes,
+      filename: filename,
+      fields: fields,
+    );
+
+    final normalizedBody = body.trim();
+    final sseError = _extractSseErrorMessage(normalizedBody);
+    if (sseError != null) {
+      throw Exception('Echec API $path : $sseError');
+    }
+
+    final decoded = _tryDecodeJsonMap(normalizedBody);
+    if (decoded == null) {
+      throw Exception('Réponse API inattendue pour $path : $normalizedBody');
+    }
+
+    return decoded;
+  }
+
+  Future<String> _sendMultipartBody({
     required String path,
     required String fileField,
     required List<int> bytes,
@@ -594,18 +689,7 @@ class ChatiaApiService {
       );
     }
 
-    final normalizedBody = response.body.trim();
-    final sseError = _extractSseErrorMessage(normalizedBody);
-    if (sseError != null) {
-      throw Exception('Echec API $path : $sseError');
-    }
-
-    final decoded = _tryDecodeJsonMap(normalizedBody);
-    if (decoded == null) {
-      throw Exception('Réponse API inattendue pour $path : $normalizedBody');
-    }
-
-    return decoded;
+    return response.body;
   }
 
   Map<String, dynamic>? _tryDecodeJsonMap(String body) {
@@ -1176,6 +1260,7 @@ class ChatiaApiService {
     final folder = json['folder']?.toString() ?? '';
     final type = json['type']?.toString();
 
+    final rawMessages = json['messages'];
     return Conversation(
       id: id,
       title: title,
@@ -1191,12 +1276,13 @@ class ChatiaApiService {
           : type == 'channel'
           ? ConversationType.channel
           : ConversationType.chat,
-      messages:
-          (json['messages'] as List<dynamic>?)
-              ?.cast<Map<String, dynamic>>()
-              .map(_mapApiMessage)
-              .toList() ??
-          [],
+      messages: rawMessages is List && rawMessages.isNotEmpty
+          ? rawMessages
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .map(_mapApiMessage)
+                .toList()
+          : const [],
     );
   }
 

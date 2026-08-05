@@ -4,12 +4,13 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants/backend_config.dart';
 import '../../../core/services/audio_recorder.dart';
 import '../../../core/services/file_picker.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../providers/chat_state_provider.dart';
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+
 class ChatComposer extends ConsumerStatefulWidget {
   const ChatComposer({
     super.key, 
@@ -17,12 +18,14 @@ class ChatComposer extends ConsumerStatefulWidget {
     required this.userName,
     required this.isAwaitingResponse,
     required this.isRenderingResponse,
+    this.mode = ChatMode.discussion,
   });
 
   final ValueChanged<String> onSend;
   final String userName;
   final bool isAwaitingResponse;
   final bool isRenderingResponse;
+  final ChatMode mode;
 
   @override
   ConsumerState<ChatComposer> createState() => _ChatComposerState();
@@ -212,6 +215,9 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
             bytes: audio.bytes,
             mimeType: audio.mimeType,
             name: audio.name,
+            agentId: widget.mode == ChatMode.health
+                ? BackendConfig.healthAgentId
+                : null,
           );
     } catch (_) {
       _stopRecordingTimer();
@@ -236,6 +242,10 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
     final isBusy = chat.isStreaming;
     final hasAction =
         _controller.text.trim().isNotEmpty || _attachedFile != null;
+
+    if (widget.mode == ChatMode.health) {
+      return _buildHealthComposer(context, isBusy: isBusy);
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
@@ -292,38 +302,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                   border: Border.all(color: AppThemeColors.stroke),
                 ),
                 child: _isRecording
-                    ? Row(
-                        children: [
-                          const SizedBox(width: 16),
-                          const _BlinkingRedDot(),
-                          const SizedBox(width: 10),
-                          Text(
-                            _formatDuration(_recordDurationSeconds),
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const Expanded(
-                            child: Center(child: _BouncingWaveform()),
-                          ),
-                          _ComposerIconBtn(
-                            icon: CupertinoIcons.trash,
-                            onTap: _cancelRecording,
-                            tooltip: 'Annuler',
-                          ),
-                          const SizedBox(width: 4),
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              right: 6,
-                              bottom: 6,
-                              top: 6,
-                            ),
-                            child: _SendButton(
-                              onTap: isBusy ? null : _sendRecording,
-                              isLoading: isBusy,
-                            ),
-                          ),
-                        ],
-                      )
+                    ? _buildRecordingBar(context, isBusy: isBusy)
                     : Row(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
@@ -414,6 +393,112 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildHealthComposer(BuildContext context, {required bool isBusy}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppThemeColors.background,
+          border: Border(top: BorderSide(color: AppThemeColors.stroke)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: widget.isAwaitingResponse || widget.isRenderingResponse
+                    ? Padding(
+                        key: ValueKey(
+                          widget.isAwaitingResponse
+                              ? 'health-awaiting-status'
+                              : 'health-rendering-status',
+                        ),
+                        padding: const EdgeInsets.only(
+                          left: 8,
+                          right: 8,
+                          bottom: 10,
+                        ),
+                        child: _ComposerStatus(
+                          label: widget.isAwaitingResponse
+                              ? 'En attente de la réponse…'
+                              : 'LoBa rédige sa réponse…',
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                decoration: BoxDecoration(
+                  color: AppThemeColors.cardStrong,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: AppThemeColors.stroke),
+                ),
+                child: _isRecording
+                    ? _buildRecordingBar(context, isBusy: isBusy)
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 14,
+                        ),
+                        child: Column(
+                          children: [
+                            _HealthMicButton(
+                              onTap: isBusy ? null : _startRecording,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Appuyez sur le micro pour enregistrer vos soucis '
+                              'de santé, puis envoyez.',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: AppThemeColors.textMuted),
+                            ),
+                          ],
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecordingBar(BuildContext context, {required bool isBusy}) {
+    return Row(
+      children: [
+        const SizedBox(width: 16),
+        const _BlinkingRedDot(),
+        const SizedBox(width: 10),
+        Text(
+          _formatDuration(_recordDurationSeconds),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const Expanded(
+          child: Center(child: _BouncingWaveform()),
+        ),
+        _ComposerIconBtn(
+          icon: CupertinoIcons.trash,
+          onTap: _cancelRecording,
+          tooltip: 'Annuler',
+        ),
+        const SizedBox(width: 4),
+        Padding(
+          padding: const EdgeInsets.only(right: 6, bottom: 6, top: 6),
+          child: _SendButton(
+            onTap: isBusy ? null : _sendRecording,
+            isLoading: isBusy,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -590,6 +675,34 @@ class _ComposerIconBtn extends StatelessWidget {
     }
 
     return Tooltip(message: tooltip, excludeFromSemantics: true, child: button);
+  }
+}
+
+class _HealthMicButton extends StatelessWidget {
+  const _HealthMicButton({required this.onTap});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final iconColor = AppThemeColors.isDark ? Colors.black : Colors.white;
+    return Material(
+      color: onTap == null ? AppThemeColors.pill : AppThemeColors.pillSelected,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 72,
+          height: 72,
+          child: Icon(
+            CupertinoIcons.mic_fill,
+            size: 30,
+            color: onTap == null ? AppThemeColors.textMuted : iconColor,
+          ),
+        ),
+      ),
+    );
   }
 }
 

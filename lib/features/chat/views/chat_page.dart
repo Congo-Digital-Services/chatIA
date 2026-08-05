@@ -24,6 +24,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ScrollController _scrollController = ScrollController();
   bool _isVoiceCallActive = false;
+  ChatMode _mode = ChatMode.discussion;
+  bool _showHealthOnboarding = true;
   String? _lastConversationId;
   int _lastMessageCount = 0;
   ProviderSubscription<AuthController>? _authSubscription;
@@ -171,6 +173,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     isBusy: chat.isLoading || chat.isStreaming,
                   ),
                 ),
+                if (!isNote)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    child: _ModeSegmentedControl(
+                      mode: _mode,
+                      onChanged: (mode) {
+                        setState(() {
+                          _mode = mode;
+                        });
+                      },
+                    ),
+                  ),
                 Expanded(
                   child: Container(
                     color: AppThemeColors.background,
@@ -198,12 +212,38 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                   key: ValueKey(conversation.id),
                                   conversation: conversation,
                                 )
+                              : _mode == ChatMode.health
+                              ? _ConversationBody(
+                                  chat: chat,
+                                  conversation: conversation,
+                                  theme: theme,
+                                  scrollController: _scrollController,
+                                  userName:
+                                      auth.session?.userName ?? 'Sylvia',
+                                  header: _showHealthOnboarding
+                                      ? _HealthOnboardingCard(
+                                          onDismiss: () {
+                                            setState(() {
+                                              _showHealthOnboarding = false;
+                                            });
+                                          },
+                                        )
+                                      : null,
+                                  emptyTitle:
+                                      'Comment vous sentez-vous aujourd\'hui ?',
+                                  emptySubtitle:
+                                      'Appuyez sur le micro ci-dessous pour '
+                                      'enregistrer vos symptômes ou vos soucis '
+                                      'de santé. LoBa IA vous écoute et vous '
+                                      'répond.',
+                                )
                               : _ConversationBody(
                                   chat: chat,
                                   conversation: conversation,
                                   theme: theme,
                                   scrollController: _scrollController,
-                                  userName: auth.session?.userName ?? 'Sylvia',
+                                  userName:
+                                      auth.session?.userName ?? 'Sylvia',
                                 ),
                         ),
                       ],
@@ -212,6 +252,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 ),
                 if (!isNote)
                   ChatComposer(
+                    mode: _mode,
                     onSend: (value) =>
                         ref.read(chatControllerProvider).sendMessage(value),
                     userName: auth.session?.userName ?? 'Utilisateur',
@@ -308,11 +349,235 @@ class _TopShellBar extends StatelessWidget {
   }
 }
 
+// ─── Sélecteur de mode (Discussion / Santé) ────────────────────────────────
+class _ModeSegmentedControl extends StatelessWidget {
+  const _ModeSegmentedControl({required this.mode, required this.onChanged});
+
+  final ChatMode mode;
+  final ValueChanged<ChatMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppThemeColors.backgroundSoft,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppThemeColors.stroke),
+      ),
+      child: Row(
+        children: [
+          _ModeSegment(
+            icon: CupertinoIcons.bubble_left_bubble_right_fill,
+            label: 'Discussion',
+            selected: mode == ChatMode.discussion,
+            onTap: () => onChanged(ChatMode.discussion),
+          ),
+          const SizedBox(width: 4),
+          _ModeSegment(
+            icon: CupertinoIcons.heart_fill,
+            label: 'Santé',
+            selected: mode == ChatMode.health,
+            onTap: () => onChanged(ChatMode.health),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModeSegment extends StatelessWidget {
+  const _ModeSegment({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedColor = AppThemeColors.isDark ? Colors.black : Colors.white;
+    return Expanded(
+      child: Material(
+        color: selected ? AppThemeColors.pillSelected : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: 16,
+                  color: selected ? selectedColor : AppThemeColors.textSoft,
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: selected
+                        ? selectedColor
+                        : AppThemeColors.textSoft,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Carte d'onboarding du mode Santé ───────────────────────────────────────
+class _HealthOnboardingCard extends StatelessWidget {
+  const _HealthOnboardingCard({required this.onDismiss});
+
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppThemeColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppThemeColors.stroke),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppThemeColors.accentSoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  CupertinoIcons.heart_fill,
+                  size: 20,
+                  color: AppThemeColors.accent,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Mode Santé',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: onDismiss,
+                child: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: AppThemeColors.backgroundSoft,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    CupertinoIcons.xmark,
+                    size: 14,
+                    color: AppThemeColors.textMuted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Ici, vous pouvez partager vos soucis de santé ou vos symptômes '
+            'uniquement par la voix. Appuyez sur le micro, dictez ce que vous '
+            'ressentez, puis envoyez. LoBa IA vous écoute et vous répond.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: AppThemeColors.textSoft,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _HealthFeatureRow(
+            icon: CupertinoIcons.mic_fill,
+            label: 'Enregistrez vos symptômes et préoccupations',
+          ),
+          const SizedBox(height: 10),
+          _HealthFeatureRow(
+            icon: CupertinoIcons.waveform_path_ecg,
+            label: 'Votre message vocal est envoyé automatiquement',
+          ),
+          const SizedBox(height: 10),
+          _HealthFeatureRow(
+            icon: CupertinoIcons.lock_shield_fill,
+            label: 'Réponse médicale personnalisée de LoBa IA',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HealthFeatureRow extends StatelessWidget {
+  const _HealthFeatureRow({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 22,
+          height: 22,
+          decoration: BoxDecoration(
+            color: AppThemeColors.accentSoft,
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Icon(icon, size: 12, color: AppThemeColors.accent),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppThemeColors.textSoft,
+              height: 1.35,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _EmptyState extends ConsumerWidget {
-  const _EmptyState({required this.theme, required this.userName});
+  const _EmptyState({
+    required this.theme,
+    required this.userName,
+    this.title,
+    this.subtitle,
+  });
 
   final ThemeData theme;
   final String userName;
+  final String? title;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -338,13 +603,14 @@ class _EmptyState extends ConsumerWidget {
             ),
             const SizedBox(height: 24),
             Text(
-              'Bonjour $userName, que souhaitez-vous créer aujourd\'hui ?',
+              title ??
+                  'Bonjour $userName, que souhaitez-vous créer aujourd\'hui ?',
               textAlign: TextAlign.center,
               style: theme.textTheme.headlineMedium?.copyWith(height: 1.2),
             ),
             const SizedBox(height: 10),
             Text(
-              'Commencez votre message ci-dessous.',
+              subtitle ?? 'Commencez votre message ci-dessous.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: AppThemeColors.textSoft,
@@ -364,6 +630,9 @@ class _ConversationBody extends StatelessWidget {
     required this.theme,
     required this.scrollController,
     required this.userName,
+    this.header,
+    this.emptyTitle,
+    this.emptySubtitle,
   });
 
   final ChatController chat;
@@ -371,6 +640,9 @@ class _ConversationBody extends StatelessWidget {
   final ThemeData theme;
   final ScrollController scrollController;
   final String userName;
+  final Widget? header;
+  final String? emptyTitle;
+  final String? emptySubtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -387,31 +659,65 @@ class _ConversationBody extends StatelessWidget {
       );
     }
 
-    if (conversation.messages.isEmpty) {
-      return _EmptyState(theme: theme, userName: userName);
+    if (conversation.messages.isEmpty && header == null) {
+      return _EmptyState(
+        theme: theme,
+        userName: userName,
+        title: emptyTitle,
+        subtitle: emptySubtitle,
+      );
     }
+
+    final hasHeader = header != null;
+    final showEmptyState = conversation.messages.isEmpty;
 
     final itemCount =
         conversation.messages.length +
-        (chat.isSelectedConversationLoadingMore ? 1 : 0);
+        (chat.isSelectedConversationLoadingMore ? 1 : 0) +
+        (hasHeader ? 1 : 0) +
+        (showEmptyState ? 1 : 0);
 
     return ListView.builder(
       controller: scrollController,
-      padding: const EdgeInsets.fromLTRB(18, 22, 18, 120),
+      padding: EdgeInsets.fromLTRB(18, hasHeader ? 14 : 22, 18, 120),
       itemCount: itemCount,
       itemBuilder: (context, index) {
-        if (index < conversation.messages.length) {
+        var itemIndex = index;
+        if (hasHeader) {
+          if (itemIndex == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 18),
+              child: header,
+            );
+          }
+          itemIndex -= 1;
+        }
+        if (showEmptyState) {
+          if (itemIndex == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 18),
+              child: _EmptyState(
+                theme: theme,
+                userName: userName,
+                title: emptyTitle,
+                subtitle: emptySubtitle,
+              ),
+            );
+          }
+          return const SizedBox.shrink();
+        }
+        if (itemIndex < conversation.messages.length) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 18),
             child: MessageBubble(
-              message: conversation.messages[index],
+              message: conversation.messages[itemIndex],
               conversation: conversation,
             ),
           );
         }
 
         if (chat.isSelectedConversationLoadingMore &&
-            index == conversation.messages.length) {
+            itemIndex == conversation.messages.length) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 18),
             child: Center(

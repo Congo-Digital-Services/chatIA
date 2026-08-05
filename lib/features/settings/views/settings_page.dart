@@ -56,23 +56,6 @@ class SettingsPage extends ConsumerWidget {
               email: profileEmail,
             ),
             const SizedBox(height: 26),
-            const _SectionTitle('Personnaliser ChatIA'),
-            const SizedBox(height: 10),
-            _SettingsGroup(
-              children: [
-                _SettingsRow(
-                  icon: CupertinoIcons.sparkles,
-                  title: 'Personnalisation',
-                  subtitle: 'Nom, mémoire et comportement de l’assistant',
-                ),
-                _SettingsRow(
-                  icon: CupertinoIcons.book,
-                  title: 'Mémoire',
-                  subtitle: 'Gestion du contexte et des préférences',
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
             const _SectionTitle('Apparence'),
             const SizedBox(height: 10),
             _SettingsGroup(
@@ -92,68 +75,33 @@ class SettingsPage extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 24),
-            const _SectionTitle('Application'),
-            const SizedBox(height: 10),
-            _SettingsGroup(
-              children: [
-                _SettingsRow(
-                  icon: CupertinoIcons.mic,
-                  title: 'Voix et dictée',
-                  subtitle: settings.voiceEngine == 'server'
-                      ? 'Traitement serveur'
-                      : 'Traitement sur l’appareil',
-                  onTap: () => _showVoiceSheet(context, ref, settings),
-                ),
-                const _SettingsRow(
-                  icon: CupertinoIcons.bell,
-                  title: 'Notifications',
-                  subtitle: 'Paramètres système',
-                ),
-                const _SettingsRow(
-                  icon: CupertinoIcons.archivebox,
-                  title: 'Stockage',
-                  subtitle: 'Fichiers, images et cache local',
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            const _SectionTitle('Compte'),
-            const SizedBox(height: 10),
-            _SettingsGroup(
-              children: [
-                _SettingsRow(
-                  icon: CupertinoIcons.mail,
-                  title: 'Adresse e-mail',
-                  subtitle: profileEmail,
-                ),
-                _SettingsRow(
-                  icon: CupertinoIcons.person_crop_circle,
-                  title: 'Session',
-                  subtitle: user?.isMock == true
-                      ? 'Connexion locale active'
-                      : 'Session active',
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
             const _SectionTitle('Aide'),
             const SizedBox(height: 10),
-            const _SettingsGroup(
+            _SettingsGroup(
               children: [
+                _SettingsRow(
+                  icon: CupertinoIcons.book,
+                  title: 'Guides d’utilisation',
+                  subtitle: 'Découvrir les modes Discussion et Santé',
+                  onTap: () => _showGuidesDialog(context),
+                ),
+                _SettingsRow(
+                  icon: CupertinoIcons.lock_shield,
+                  title: 'Confidentialité et données',
+                  subtitle: 'Vos conversations de santé restent privées',
+                  onTap: () => _showConfidentialityDialog(context),
+                ),
                 _SettingsRow(
                   icon: CupertinoIcons.flag,
                   title: 'Signaler un problème',
-                  subtitle: 'Retour visuel ou anomalie de l’application',
-                ),
-                _SettingsRow(
-                  icon: CupertinoIcons.question_circle,
-                  title: 'Centre d’assistance',
-                  subtitle: 'Documentation et support',
+                  subtitle: 'Une anomalie ou un retour sur l’application',
+                  onTap: () => _showReportDialog(context),
                 ),
                 _SettingsRow(
                   icon: CupertinoIcons.info_circle,
-                  title: 'À propos',
-                  subtitle: 'Informations de l’application',
+                  title: 'À propos de LoBa IA',
+                  subtitle: 'Version et informations de l’application',
+                  onTap: () => _showAboutDialog(context),
                 ),
               ],
             ),
@@ -283,35 +231,132 @@ class SettingsPage extends ConsumerWidget {
     );
   }
 
-  static Future<void> _showVoiceSheet(
-    BuildContext context,
-    WidgetRef ref,
-    SettingsController settings,
-  ) {
-    return showModalBottomSheet<void>(
+  static void _showGuidesDialog(BuildContext context) {
+    _showHelpDialog(
+      context,
+      icon: CupertinoIcons.book,
+      title: 'Guides d’utilisation',
+      paragraphs: const [
+        'Mode Discussion : échangez avec LoBa IA par écrit, en français ou en lingala, sur n’importe quel sujet.',
+        'Mode Santé : appuyez sur le micro, dictez vos symptômes ou vos préoccupations de santé, puis envoyez. LoBa IA vous écoute et vous répond.',
+        'Vos conversations sont conservées dans l’historique et restent accessibles à tout moment.',
+      ],
+    );
+  }
+
+  static void _showConfidentialityDialog(BuildContext context) {
+    _showHelpDialog(
+      context,
+      icon: CupertinoIcons.lock_shield,
+      title: 'Confidentialité et données',
+      paragraphs: const [
+        'Vos conversations et vos enregistrements vocaux sont traités de manière confidentielle.',
+        'Ils sont stockés sur le serveur de LoBa IA et ne sont jamais partagés avec d’autres personnes.',
+        'Vous pouvez vous déconnecter à tout moment pour protéger l’accès à votre compte.',
+      ],
+    );
+  }
+
+  static void _showReportDialog(BuildContext context) {
+    _showHelpDialog(
+      context,
+      icon: CupertinoIcons.flag,
+      title: 'Signaler un problème',
+      paragraphs: const [
+        'Si une réponse est erronée, si l’audio n’est pas transcrit correctement ou si l’application se bloque, nous voulons le savoir.',
+        'Précisez le mode utilisé (Discussion ou Santé), la date et ce qui s’est passé.',
+        'Envoyez votre retour à votre administrateur ou via le canal d’assistance de votre plateforme.',
+      ],
+    );
+  }
+
+  static void _showAboutDialog(BuildContext context) {
+    _showHelpDialog(
+      context,
+      icon: CupertinoIcons.info_circle,
+      title: 'À propos de LoBa IA',
+      paragraphs: const [
+        'LoBa IA est votre assistant de santé conversationnel, en français et en lingala.',
+        'Il vous écoute, comprend vos symptômes et vous guide en toute confidentialité.',
+      ],
+      note: 'Version 1.0.0',
+    );
+  }
+
+  static Future<void> _showHelpDialog(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required List<String> paragraphs,
+    String? note,
+  }) {
+    final theme = Theme.of(context);
+    return showDialog<void>(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return _SheetShell(
-          title: 'Voix et dictée',
-          child: _ChoiceGroup<String>(
-            value: settings.voiceEngine,
-            items: const [
-              _ChoiceItem(
-                value: 'local',
-                title: 'Sur l’appareil',
-                subtitle: 'Plus direct et plus privé',
-              ),
-              _ChoiceItem(
-                value: 'server',
-                title: 'Serveur',
-                subtitle: 'Traitement distant quand nécessaire',
-              ),
-            ],
-            onSelected: (value) {
-              ref.read(settingsControllerProvider).setVoiceEngine(value);
-              Navigator.of(context).pop();
-            },
+      builder: (ctx) {
+        return Dialog(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  child: Container(
+                    width: 66,
+                    height: 66,
+                    decoration: BoxDecoration(
+                      color: AppThemeColors.accentSoft,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, size: 30, color: AppThemeColors.accent),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleLarge,
+                ),
+                const SizedBox(height: 14),
+                for (final paragraph in paragraphs) ...[
+                  Text(
+                    paragraph,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: AppThemeColors.textSoft,
+                      height: 1.55,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                if (note != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppThemeColors.backgroundSoft,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(
+                      note,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppThemeColors.textMuted,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                ],
+                SizedBox(
+                  height: 50,
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Compris'),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -426,11 +471,7 @@ class _SettingsRow extends StatelessWidget {
   final VoidCallback? onTap;
 
   bool get _isLastRowWithoutDivider =>
-      title == 'Mémoire' ||
-      title == 'Langue' ||
-      title == 'Stockage' ||
-      title == 'Session' ||
-      title == 'À propos';
+      title == 'Langue' || title == 'À propos de LoBa IA';
 
   @override
   Widget build(BuildContext context) {

@@ -253,6 +253,32 @@ void main() {
       expect(protectedCalls, 2);
       expect(session?.accessToken, refreshedToken);
     });
+
+    test('clearPersistedSession invalidates session and notifies', () async {
+      final now = DateTime.now();
+      AuthSession? session = _session(
+        accessToken: _jwt(now.add(const Duration(minutes: 10))),
+        refreshToken: 'refresh-token',
+        expiresAt: now.add(const Duration(minutes: 10)),
+      );
+
+      final service = _buildService(
+        readSession: () => session,
+        writeSession: (value) async => session = value,
+        clearSession: () async => session = null,
+        onSend: (_) async => _jsonResponse(200, {'ok': true}),
+      );
+
+      var notified = 0;
+      service.onSessionInvalidated = () {
+        notified += 1;
+      };
+
+      await service.clearPersistedSession();
+
+      expect(service.currentSession, isNull);
+      expect(notified, 1);
+    });
   });
 }
 

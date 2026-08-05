@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/backend_config.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -14,10 +15,6 @@ class LoginPage extends ConsumerStatefulWidget {
 class _LoginPageState extends ConsumerState<LoginPage> {
   late final TextEditingController _email;
   late final TextEditingController _password;
-  late final TextEditingController _name;
-  late final TextEditingController _username;
-  late final TextEditingController _confirmation;
-  bool _register = false;
   bool _hidePassword = true;
 
   @override
@@ -25,110 +22,147 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     super.initState();
     _email = TextEditingController(text: BackendConfig.authEmail);
     _password = TextEditingController(text: BackendConfig.authPassword);
-    _name = TextEditingController();
-    _username = TextEditingController();
-    _confirmation = TextEditingController();
   }
 
   @override
   void dispose() {
     _email.dispose();
     _password.dispose();
-    _name.dispose();
-    _username.dispose();
-    _confirmation.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
-    if (auth.isRestoring) {
+    if (auth.isRestoring)
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
+    final theme = Theme.of(context);
     return Scaffold(
       backgroundColor: AppThemeColors.background,
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: Column(
-              children: [
-                Image.asset('assets/icons/congo_logo.png', height: 104),
-                const SizedBox(height: 24),
-                Text('ChatIA', style: Theme.of(context).textTheme.displaySmall),
-                const SizedBox(height: 36),
-                Text(
-                  _register ? 'Créer un compte' : 'Connexion',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 16),
-                if (_register) ...[
-                  _field(_name, 'Nom complet', auth.isLoading),
-                  const SizedBox(height: 12),
-                  _field(_username, 'Nom d’utilisateur', auth.isLoading),
-                  const SizedBox(height: 12),
-                ],
-                _field(
-                  _email,
-                  'Adresse e-mail',
-                  auth.isLoading,
-                  keyboard: TextInputType.emailAddress,
-                ),
-                const SizedBox(height: 12),
-                _field(_password, 'Mot de passe', auth.isLoading, password: true),
-                if (_register) ...[
-                  const SizedBox(height: 12),
-                  _field(
-                    _confirmation,
-                    'Confirmer le mot de passe',
-                    auth.isLoading,
-                    password: true,
-                  ),
-                ],
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: auth.isLoading ? null : _submit,
-                    child: Text(
-                      auth.isLoading
-                          ? 'Connexion en cours…'
-                          : (_register ? 'Créer un compte' : 'Continuer'),
+      body: DecoratedBox(
+        decoration: BoxDecoration(gradient: AppThemeColors.shellGradient),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 430),
+                child: Column(
+                  children: [
+                    Image.asset('assets/icons/congo_logo.png', height: 92),
+                    const SizedBox(height: 20),
+                    Text('ChatIA', style: theme.textTheme.displaySmall),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Votre espace de travail intelligent',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: AppThemeColors.textSoft,
+                      ),
                     ),
-                  ),
-                ),
-                if (auth.errorMessage != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 16),
-                    child: Text(
-                      auth.errorMessage!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.redAccent),
+                    const SizedBox(height: 32),
+                    Container(
+                      padding: const EdgeInsets.all(22),
+                      decoration: BoxDecoration(
+                        color: AppThemeColors.surface.withValues(alpha: .96),
+                        borderRadius: BorderRadius.circular(28),
+                        border: Border.all(color: AppThemeColors.stroke),
+                        boxShadow: AppThemeShadows.medium,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Bon retour',
+                            style: theme.textTheme.headlineSmall,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Connectez-vous pour retrouver vos conversations.',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: AppThemeColors.textSoft,
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          _field(
+                            _email,
+                            'Adresse e-mail',
+                            auth.isLoading,
+                            keyboard: TextInputType.emailAddress,
+                          ),
+                          const SizedBox(height: 12),
+                          _field(
+                            _password,
+                            'Mot de passe',
+                            auth.isLoading,
+                            password: true,
+                          ),
+                          const SizedBox(height: 20),
+                          SizedBox(
+                            height: 52,
+                            child: FilledButton(
+                              onPressed: auth.isLoading ? null : _signIn,
+                              child: auth.isLoading
+                                  ? const CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    )
+                                  : const Text('Se connecter'),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: auth.isLoading
+                                ? null
+                                : () => context.go('/forgot-password'),
+                            child: const Text('Mot de passe oublié ?'),
+                          ),
+                          if (auth.errorMessage != null)
+                            _message(auth.errorMessage!, Colors.redAccent),
+                          if (auth.errorMessage?.contains(
+                                'n’est pas vérifié',
+                              ) ??
+                              false)
+                            TextButton.icon(
+                              onPressed: auth.isLoading
+                                  ? null
+                                  : () => ref
+                                        .read(authControllerProvider)
+                                        .resendVerificationEmail(
+                                          _email.text.trim(),
+                                        ),
+                              icon: const Icon(
+                                Icons.mark_email_unread_outlined,
+                              ),
+                              label: const Text(
+                                'Renvoyer l’e-mail de vérification',
+                              ),
+                            ),
+                          const SizedBox(height: 8),
+                          Divider(color: AppThemeColors.stroke),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Vous n’avez pas encore de compte ?',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: AppThemeColors.textSoft,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            height: 48,
+                            child: OutlinedButton.icon(
+                              key: const Key('register_button'),
+                              onPressed: auth.isLoading
+                                  ? null
+                                  : () => context.go('/register'),
+                              icon: const Icon(Icons.person_add_alt_1_rounded),
+                              label: const Text('Créer un compte'),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                if (auth.infoMessage != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 16),
-                    child: Text(
-                      auth.infoMessage!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.green),
-                    ),
-                  ),
-                TextButton(
-                  onPressed: auth.isLoading
-                      ? null
-                      : () => setState(() {
-                          _register = !_register;
-                          ref.read(authControllerProvider).clearMessages();
-                        }),
-                  child: Text(
-                    _register ? 'J’ai déjà un compte' : 'Créer un compte',
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -149,31 +183,41 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     keyboardType: keyboard,
     decoration: InputDecoration(
       labelText: label,
+      filled: true,
+      fillColor: AppThemeColors.backgroundSoft,
       suffixIcon: password
           ? IconButton(
-              icon: Icon(_hidePassword ? Icons.visibility_off : Icons.visibility),
+              icon: Icon(
+                _hidePassword
+                    ? Icons.visibility_off_rounded
+                    : Icons.visibility_rounded,
+              ),
               onPressed: () => setState(() => _hidePassword = !_hidePassword),
             )
           : null,
     ),
   );
-
-  void _submit() {
+  Widget _message(String text, Color color) => Padding(
+    padding: const EdgeInsets.only(top: 12),
+    child: Text(
+      text,
+      textAlign: TextAlign.center,
+      style: TextStyle(color: color),
+    ),
+  );
+  void _signIn() {
+    final email = _email.text.trim();
     final auth = ref.read(authControllerProvider);
-    if (_register) {
-      if (_password.text != _confirmation.text) {
-        auth.setErrorMessage('Les mots de passe ne correspondent pas.');
-        return;
-      }
-      auth.register(
-        name: _name.text.trim(),
-        username: _username.text.trim(),
-        email: _email.text.trim(),
-        password: _password.text,
-        confirmPassword: _confirmation.text,
+    if (email.isEmpty || _password.text.isEmpty) {
+      auth.setErrorMessage(
+        'Veuillez remplir votre adresse e-mail et votre mot de passe.',
       );
       return;
     }
-    auth.signIn(email: _email.text.trim(), password: _password.text);
+    if (!email.contains('@')) {
+      auth.setErrorMessage('Veuillez renseigner une adresse e-mail valide.');
+      return;
+    }
+    auth.signIn(email: email, password: _password.text);
   }
 }

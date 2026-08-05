@@ -20,6 +20,12 @@ void main() {
     await tester.pump();
 
     expect(find.byType(MaterialApp), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const Key('register_button')));
+    await tester.tap(find.byKey(const Key('register_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Nom complet'), findsOneWidget);
   });
 }
 
@@ -45,6 +51,27 @@ class _FakeAuthService implements AuthService {
   }) async {
     return 'Please check your email to verify your email address.';
   }
+
+  @override
+  Future<String> verifyEmail({
+    required String email,
+    required String token,
+  }) async => 'Email verification was successful';
+
+  @override
+  Future<String> resendVerificationEmail({required String email}) async =>
+      'Verification email sent';
+
+  @override
+  Future<String> requestPasswordReset({required String email}) async =>
+      'Password reset email sent';
+
+  @override
+  Future<String> resetPassword({
+    required String userId,
+    required String token,
+    required String password,
+  }) async => 'Password reset was successful';
 
   @override
   Future<void> signOut({String? idTokenHint}) async {}

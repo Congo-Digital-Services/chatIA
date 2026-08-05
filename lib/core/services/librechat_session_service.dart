@@ -67,6 +67,10 @@ class LibreChatSessionService {
   AuthSession? _currentSession;
   Future<AuthSession>? _refreshFuture;
 
+  /// Invoqué quand la session est invalidée côté serveur (401 non récupérable),
+  /// pour permettre à la couche d'auth de rediriger vers la connexion.
+  void Function()? onSessionInvalidated;
+
   AuthSession? get currentSession => _currentSession;
 
   void hydrateSession(AuthSession? session) {
@@ -317,6 +321,7 @@ class LibreChatSessionService {
   Future<void> clearPersistedSession() async {
     _currentSession = null;
     await storage.clear();
+    onSessionInvalidated?.call();
   }
 
   DateTime _readTokenExpiry(String token) {
