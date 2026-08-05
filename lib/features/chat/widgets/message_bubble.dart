@@ -302,25 +302,15 @@ class MessageBubble extends ConsumerWidget {
                         icon: CupertinoIcons.doc_on_doc,
                         label: 'Copier',
                         onTap: () {
-                          Clipboard.setData(ClipboardData(text: message.text));
+                          Clipboard.setData(
+                            ClipboardData(text: message.text),
+                          );
                           showAppToast(
                             context,
                             message: 'Réponse copiée.',
                             type: AppToastType.success,
                           );
                         },
-                      ),
-                      const SizedBox(width: 6),
-                      _AssistantAction(
-                        icon: CupertinoIcons.arrow_clockwise,
-                        label: 'Régénérer',
-                        onTap: () {},
-                      ),
-                      const SizedBox(width: 6),
-                      _AssistantAction(
-                        icon: CupertinoIcons.hand_thumbsup,
-                        label: 'Utile',
-                        onTap: () {},
                       ),
                     ],
                   ),

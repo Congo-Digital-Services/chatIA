@@ -943,9 +943,22 @@ class ChatiaApiService {
     if (normalizedEvent == 'error' || resolvedEvent == 'error') {
       return ChatStreamEvent.error(
         error:
-            payload['error']?.toString() ??
-            payload['message']?.toString() ??
-            'Erreur SSE inconnue',
+            _cleanStreamError(
+              payload['error']?.toString() ??
+                  payload['message']?.toString() ??
+                  'Erreur SSE inconnue',
+            ),
+        rawEvent: resolvedEvent,
+        rawPayload: payload,
+        conversationId:
+            _extractConversationId(payload) ?? fallbackConversationId,
+      );
+    }
+
+    final contentError = _extractStreamError(payload);
+    if (contentError != null) {
+      return ChatStreamEvent.error(
+        error: contentError,
         rawEvent: resolvedEvent,
         rawPayload: payload,
         conversationId:
@@ -1238,6 +1251,112 @@ class ChatiaApiService {
       return Map<String, dynamic>.from(value);
     }
     return null;
+  }
+
+  /// Cherche une erreur renvoyée par le backend dans les blocs de contenu
+  /// (`type: "error"`) ou dans le champ `error` du payload.
+  String? _extractStreamError(Map<String, dynamic> payload) {
+    final candidates = <Object?>[
+      payload['error'],
+      payload['content'],
+      _asMap(payload['message'])?['content'],
+      _asMap(payload['responseMessage'])?['content'],
+    ];
+    for (final candidate in candidates) {
+      if (candidate == null) {
+        continue;
+      }
+      final error = _extractErrorFromContent(candidate);
+      if (error != null) {
+        return error;
+      }
+    }
+    return null;
+  }
+
+  String? _extractErrorFromContent(Object? content) {
+    if (content is String) {
+      final text = content.trim();
+      if (text.isNotEmpty && _looksLikeBackendError(text)) {
+        return _cleanStreamError(text);
+      }
+      return null;
+    }
+
+    if (content is! List) {
+      return null;
+    }
+
+    for (final item in content) {
+      final block = _asMap(item);
+      if (block == null) {
+        continue;
+      }
+      if (block['type']?.toString() != 'error') {
+        continue;
+      }
+      final message =
+          block['error']?.toString() ?? block['text']?.toString();
+      if (message != null && message.trim().isNotEmpty) {
+        return _cleanStreamError(message);
+      }
+    }
+    return null;
+  }
+
+  bool _looksLikeBackendError(String text) {
+    if (text.toLowerCase().contains('an error occurred while processing')) {
+      return true;
+    }
+    if (text.contains('<html') || text.contains('<title')) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Nettoie un message d'erreur serveur : retire les balises HTML et
+  /// reformule les erreurs HTTP (502 Bad Gateway, etc.).
+  String _cleanStreamError(String raw) {
+    final statusMatch = RegExp(r'\b([45]\d{2})\b').firstMatch(raw);
+    if (statusMatch != null) {
+      final status = statusMatch.group(1)!;
+      final label = _httpStatusLabel(status);
+      if (label.isNotEmpty) {
+        return 'Le serveur a renvoyé une erreur ($status — $label). Veuillez réessayer.';
+      }
+      return 'Le serveur a renvoyé une erreur ($status). Veuillez réessayer.';
+    }
+
+    var text = raw.replaceAll(RegExp(r'<[^>]*>'), ' ');
+    text = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return text.isEmpty ? 'Erreur inconnue' : text;
+  }
+
+  String _httpStatusLabel(String status) {
+    switch (status) {
+      case '400':
+        return 'Requête invalide';
+      case '401':
+        return 'Non autorisé';
+      case '403':
+        return 'Accès refusé';
+      case '404':
+        return 'Introuvable';
+      case '408':
+        return 'Délai d\'attente';
+      case '429':
+        return 'Trop de requêtes';
+      case '500':
+        return 'Erreur interne';
+      case '502':
+        return 'Bad Gateway';
+      case '503':
+        return 'Service indisponible';
+      case '504':
+        return 'Délai dépassé';
+      default:
+        return '';
+    }
   }
 
   List<Map<String, dynamic>> _asListOfMaps(Object? value) {

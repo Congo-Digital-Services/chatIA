@@ -28,6 +28,10 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>ChatIA utilise le microphone pour enregistrer et transcrire vos messages vocaux.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>ChatIA accède à vos photos pour les joindre à vos conversations.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>ChatIA utilise la caméra pour prendre une photo à joindre à vos conversations.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -117,18 +118,41 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
     widget.onSend(value);
   }
 
-  Future<void> _pickFile() async {
+  Future<void> _showFileSourceSheet() async {
+    final choice = await showModalBottomSheet<_FileSourceChoice>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => const _FileSourceSheet(),
+    );
+    if (choice == null || !mounted) {
+      return;
+    }
+
+    switch (choice) {
+      case _FileSourceChoice.camera:
+        await _pickFileWith(() => filePicker.pickImage(useCamera: true));
+      case _FileSourceChoice.gallery:
+        await _pickFileWith(() => filePicker.pickImage(useCamera: false));
+      case _FileSourceChoice.audio:
+        await _pickFileWith(() => filePicker.pickAudioFile());
+    }
+  }
+
+  Future<void> _pickFileWith(
+    Future<PickedFileInfo?> Function() pick,
+  ) async {
     try {
-      final info = await filePicker.pickFile();
+      final info = await pick();
       if (info == null) {
+        return;
+      }
+      if (!mounted) {
         return;
       }
       setState(() {
         _attachedFile = info;
       });
-      if (!mounted) {
-        return;
-      }
       showAppToast(
         context,
         message: 'Fichier prêt à être envoyé.',
@@ -272,28 +296,6 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                     },
                   ),
                 ),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                child: widget.isAwaitingResponse || widget.isRenderingResponse
-                    ? Padding(
-                        key: ValueKey(
-                          widget.isAwaitingResponse
-                              ? 'awaiting-status'
-                              : 'rendering-status',
-                        ),
-                        padding: const EdgeInsets.only(
-                          left: 8,
-                          right: 8,
-                          bottom: 10,
-                        ),
-                        child: _ComposerStatus(
-                          label: widget.isAwaitingResponse
-                              ? 'En attente de la réponse…'
-                              : 'LoBa rédige sa réponse…',
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
               AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
                 decoration: BoxDecoration(
@@ -314,7 +316,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                             ),
                             child: _ComposerIconBtn(
                               icon: CupertinoIcons.add,
-                              onTap: isBusy ? null : _pickFile,
+                              onTap: isBusy ? null : _showFileSourceSheet,
                               tooltip: 'Joindre un fichier',
                             ),
                           ),
@@ -410,28 +412,6 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                child: widget.isAwaitingResponse || widget.isRenderingResponse
-                    ? Padding(
-                        key: ValueKey(
-                          widget.isAwaitingResponse
-                              ? 'health-awaiting-status'
-                              : 'health-rendering-status',
-                        ),
-                        padding: const EdgeInsets.only(
-                          left: 8,
-                          right: 8,
-                          bottom: 10,
-                        ),
-                        child: _ComposerStatus(
-                          label: widget.isAwaitingResponse
-                              ? 'En attente de la réponse…'
-                              : 'LoBa rédige sa réponse…',
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
               AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
                 decoration: BoxDecoration(
@@ -483,7 +463,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
           ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
         ),
         const Expanded(
-          child: Center(child: _BouncingWaveform()),
+          child: Center(child: _LiveWaveform()),
         ),
         _ComposerIconBtn(
           icon: CupertinoIcons.trash,
@@ -499,80 +479,6 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
           ),
         ),
       ],
-    );
-  }
-}
-
-class _ComposerStatus extends StatefulWidget {
-  const _ComposerStatus({required this.label});
-
-  final String label;
-
-  @override
-  State<_ComposerStatus> createState() => _ComposerStatusState();
-}
-
-class _ComposerStatusState extends State<_ComposerStatus>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppThemeColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppThemeColors.stroke),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 18,
-            height: 18,
-            child: AnimatedBuilder(
-              animation: _controller,
-              builder: (context, child) {
-                return CircularProgressIndicator(
-                  value: null,
-                  strokeWidth: 1.8,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    AppThemeColors.textSoft.withValues(
-                      alpha: 0.6 + (_controller.value * 0.4),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              widget.label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: AppThemeColors.textSoft,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -784,55 +690,248 @@ class _BlinkingRedDotState extends State<_BlinkingRedDot>
   }
 }
 
-class _BouncingWaveform extends StatefulWidget {
-  const _BouncingWaveform();
+class _LiveWaveform extends StatefulWidget {
+  const _LiveWaveform();
 
   @override
-  State<_BouncingWaveform> createState() => _BouncingWaveformState();
+  State<_LiveWaveform> createState() => _LiveWaveformState();
 }
 
-class _BouncingWaveformState extends State<_BouncingWaveform>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _anim;
-  final List<double> _heights = [12, 24, 16, 30, 20, 26, 14, 18, 22, 10];
+class _LiveWaveformState extends State<_LiveWaveform> {
+  static const int _barCount = 26;
+  final List<double> _levels = List.filled(_barCount, 0.06);
+  StreamSubscription<double>? _amplitudeSub;
+  Timer? _fallbackTimer;
+  int _index = 0;
 
   @override
   void initState() {
     super.initState();
-    _anim = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    )..repeat(reverse: true);
+    final stream = audioRecorder.onAmplitude;
+    if (stream != null) {
+      _amplitudeSub = stream.listen((level) {
+        if (!mounted) return;
+        setState(() => _pushLevel(level.clamp(0.0, 1.0)));
+      });
+    } else {
+      _fallbackTimer = Timer.periodic(const Duration(milliseconds: 90), (_) {
+        if (!mounted) return;
+        setState(() {
+          final wave = 0.5 + 0.5 * math.sin(_index * 0.65);
+          final jitter = 0.25 * (0.5 + 0.5 * math.sin(_index * 2.4 + 1.2));
+          _index++;
+          _pushLevel((wave * 0.72 + jitter).clamp(0.05, 1.0));
+        });
+      });
+    }
+  }
+
+  void _pushLevel(double level) {
+    for (var i = _levels.length - 1; i > 0; i--) {
+      _levels[i] = _levels[i - 1];
+    }
+    _levels[0] = level;
   }
 
   @override
   void dispose() {
-    _anim.dispose();
+    _amplitudeSub?.cancel();
+    _fallbackTimer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _anim,
-      builder: (context, child) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(_heights.length, (index) {
-            final value = _anim.value;
-            final height = _heights[index] * (0.4 + 0.6 * value);
-            return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              width: 3,
-              height: height,
-              decoration: BoxDecoration(
-                color: AppThemeColors.accent.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(999),
-              ),
-            );
-          }),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: List.generate(_barCount, (index) {
+        final level = _levels[index];
+        final height = 6 + level * 34;
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          width: 3,
+          height: height,
+          decoration: BoxDecoration(
+            color: AppThemeColors.accent.withValues(alpha: 0.45 + 0.55 * level),
+            borderRadius: BorderRadius.circular(999),
+          ),
         );
-      },
+      }),
     );
   }
+}
+
+enum _FileSourceChoice { camera, gallery, audio }
+
+class _FileSourceSheet extends StatelessWidget {
+  const _FileSourceSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      _FileSourceItem(
+        icon: CupertinoIcons.camera,
+        title: 'Photo',
+        subtitle: 'Prendre une photo',
+        value: _FileSourceChoice.camera,
+      ),
+      _FileSourceItem(
+        icon: CupertinoIcons.photo,
+        title: 'Galerie',
+        subtitle: 'Choisir une image',
+        value: _FileSourceChoice.gallery,
+      ),
+      _FileSourceItem(
+        icon: CupertinoIcons.music_note,
+        title: 'Audio',
+        subtitle: 'Choisir un fichier audio',
+        value: _FileSourceChoice.audio,
+      ),
+    ];
+
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppThemeColors.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border(
+            top: BorderSide(color: AppThemeColors.stroke),
+          ),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppThemeColors.isDark
+                      ? AppThemeColors.strokeStrong
+                      : AppThemeColors.stroke,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+                child: Text(
+                  'Joindre un fichier',
+                  style: TextStyle(
+                    color: AppThemeColors.textStrong,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...List.generate(items.length, (index) {
+                final item = items[index];
+                return _FileSourceRow(
+                  item: item,
+                  isLast: index == items.length - 1,
+                  onTap: () =>
+                      Navigator.of(context).pop(_FileSourceChoice.values[index]),
+                );
+              }),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FileSourceRow extends StatelessWidget {
+  const _FileSourceRow({
+    required this.item,
+    required this.isLast,
+    required this.onTap,
+  });
+
+  final _FileSourceItem item;
+  final bool isLast;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        margin: EdgeInsets.only(left: 16, right: 16, bottom: isLast ? 4 : 2),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppThemeColors.cardStrong,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: AppThemeColors.accentSoft,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Icon(
+                item.icon,
+                size: 21,
+                color: AppThemeColors.textStrong,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    style: TextStyle(
+                      color: AppThemeColors.textStrong,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    item.subtitle,
+                    style: TextStyle(
+                      color: AppThemeColors.textMuted,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              CupertinoIcons.chevron_right,
+              size: 16,
+              color: AppThemeColors.textMuted,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FileSourceItem {
+  const _FileSourceItem({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final _FileSourceChoice value;
 }

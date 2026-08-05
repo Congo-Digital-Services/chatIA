@@ -28,6 +28,16 @@ class AudioRecorderMobile extends AudioRecorderPlatform {
   bool get isRecording => _isRecording;
 
   @override
+  Stream<double>? get onAmplitude => _recorder
+      .onAmplitudeChanged(const Duration(milliseconds: 80))
+      .map(_normalizeAmplitude);
+
+  double _normalizeAmplitude(Amplitude amplitude) {
+    final current = amplitude.current.isNaN ? 0.0 : amplitude.current;
+    return ((current + 45) / 45).clamp(0.0, 1.0);
+  }
+
+  @override
   Future<void> startRecording() async {
     final hasPermission = await _recorder.hasPermission();
     if (!hasPermission) {

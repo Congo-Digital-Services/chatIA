@@ -6,11 +6,23 @@ import 'file_picker_base.dart';
 
 class FilePickerWeb extends FilePickerPlatform {
   @override
-  Future<PickedFileInfo?> pickFile() async {
+  Future<PickedFileInfo?> pickFile() => pickImage(useCamera: false);
+
+  @override
+  Future<PickedFileInfo?> pickImage({required bool useCamera}) {
+    return _pickFromInput('image/*');
+  }
+
+  @override
+  Future<PickedFileInfo?> pickAudioFile() {
+    return _pickFromInput('audio/*');
+  }
+
+  Future<PickedFileInfo?> _pickFromInput(String accept) async {
     final completer = Completer<PickedFileInfo?>();
 
     final uploadInput = html.FileUploadInputElement();
-    uploadInput.accept = 'image/*,application/pdf,text/*,audio/*,video/*';
+    uploadInput.accept = accept;
     uploadInput.click();
 
     uploadInput.onChange.listen((e) async {

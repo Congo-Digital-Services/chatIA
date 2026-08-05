@@ -18,6 +18,9 @@ class AudioRecorderWeb extends AudioRecorderPlatform {
   bool get isRecording => _isRecording;
 
   @override
+  Stream<double>? get onAmplitude => null;
+
+  @override
   Future<void> startRecording() async {
     try {
       _chunks.clear();

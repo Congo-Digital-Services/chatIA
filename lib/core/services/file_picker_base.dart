@@ -23,6 +23,14 @@ class PickedFileInfo {
 }
 
 abstract class FilePickerPlatform {
+  /// Image depuis la galerie (comportement historique).
   Future<PickedFileInfo?> pickFile();
+
+  /// Photo : caméra (`useCamera: true`) ou galerie (`useCamera: false`).
+  Future<PickedFileInfo?> pickImage({required bool useCamera});
+
+  /// Fichier audio.
+  Future<PickedFileInfo?> pickAudioFile();
+
   void openFile(String url);
 }

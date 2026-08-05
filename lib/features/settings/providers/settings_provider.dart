@@ -15,12 +15,14 @@ class SettingsController extends ChangeNotifier {
   String _shortcutAction =
       'none'; // 'none', 'voice_call', 'file_picker', 'create_note', 'new_chat'
   String _voiceEngine = 'local'; // 'local', 'server'
+  bool _healthOnboardingSeen = false;
 
   ThemeMode get themeMode => _themeMode;
   Color get accentColor => _accentColor;
   String get language => _language;
   String get shortcutAction => _shortcutAction;
   String get voiceEngine => _voiceEngine;
+  bool get healthOnboardingSeen => _healthOnboardingSeen;
 
   // ── Persistence ──────────────────────────────────────────────────────────────
   Future<void> loadFromPrefs() async {
@@ -39,6 +41,7 @@ class SettingsController extends ChangeNotifier {
       _language = prefs.getString('language') ?? 'fr';
       _shortcutAction = prefs.getString('shortcutAction') ?? 'none';
       _voiceEngine = prefs.getString('voiceEngine') ?? 'local';
+      _healthOnboardingSeen = prefs.getBool('healthOnboardingSeen') ?? false;
       notifyListeners();
     } catch (_) {
       // SharedPreferences not available (e.g. web without storage) — ignore
@@ -58,6 +61,7 @@ class SettingsController extends ChangeNotifier {
       await prefs.setString('language', _language);
       await prefs.setString('shortcutAction', _shortcutAction);
       await prefs.setString('voiceEngine', _voiceEngine);
+      await prefs.setBool('healthOnboardingSeen', _healthOnboardingSeen);
     } catch (_) {}
   }
 
@@ -90,6 +94,12 @@ class SettingsController extends ChangeNotifier {
 
   void setVoiceEngine(String engine) {
     _voiceEngine = engine;
+    notifyListeners();
+    _save();
+  }
+
+  void markHealthOnboardingSeen() {
+    _healthOnboardingSeen = true;
     notifyListeners();
     _save();
   }

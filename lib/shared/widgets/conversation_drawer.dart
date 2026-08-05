@@ -49,12 +49,56 @@ class _ConduitConversationDrawerState
             child: Column(
               children: [
                 Padding(
-                  padding: EdgeInsets.fromLTRB(2, topInset + 10, 2, 12),
+                  padding: EdgeInsets.fromLTRB(4, topInset + 14, 4, 14),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        padding: const EdgeInsets.all(6.5),
+                        decoration: BoxDecoration(
+                          color: AppThemeColors.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppThemeColors.strokeStrong,
+                          ),
+                        ),
+                        child: Image.asset(
+                          'assets/icons/congo_logo.png',
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'LoBa IA',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              height: 1.1,
+                            ),
+                          ),
+                          Text(
+                            'Assistant personnel',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppThemeColors.textMuted,
+                              height: 1.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(2, 0, 2, 12),
                   child: Row(
                     children: [
                       Expanded(
                         child: Container(
-                          height: 40,
+                          height: 44,
                           decoration: BoxDecoration(
                             color: AppThemeColors.surface,
                             borderRadius: BorderRadius.circular(12),
@@ -62,13 +106,13 @@ class _ConduitConversationDrawerState
                           ),
                           child: Row(
                             children: [
-                              const SizedBox(width: 10),
+                              const SizedBox(width: 12),
                               Icon(
                                 CupertinoIcons.search,
-                                size: 14,
+                                size: 16,
                                 color: AppThemeColors.textMuted,
                               ),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 8),
                               Expanded(
                                 child: TextField(
                                   onChanged: ref
@@ -82,9 +126,10 @@ class _ConduitConversationDrawerState
                                     border: InputBorder.none,
                                     enabledBorder: InputBorder.none,
                                     focusedBorder: InputBorder.none,
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      vertical: 0,
-                                    ),
+                                    contentPadding:
+                                        const EdgeInsets.symmetric(
+                                          vertical: 0,
+                                        ),
                                     hintStyle: theme.textTheme.bodySmall
                                         ?.copyWith(
                                           color: AppThemeColors.textMuted,
@@ -101,8 +146,11 @@ class _ConduitConversationDrawerState
                       _DrawerIconBtn(
                         icon: CupertinoIcons.square_pencil,
                         tooltip: 'Nouvelle conversation',
+                        accent: true,
                         onTap: () {
-                          ref.read(chatControllerProvider).createConversation();
+                          ref
+                              .read(chatControllerProvider)
+                              .createConversation();
                           Navigator.of(context).maybePop();
                         },
                       ),
@@ -120,29 +168,26 @@ class _ConduitConversationDrawerState
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 10,
-                  ),
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: AppThemeColors.surface,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: AppThemeColors.stroke),
                   ),
                   child: Row(
                     children: [
                       CircleAvatar(
-                        radius: 18,
-                        backgroundColor: AppThemeColors.pill,
+                        radius: 20,
+                        backgroundColor: AppThemeColors.accentSoft,
                         child: Text(
                           displayName.substring(0, 1).toUpperCase(),
                           style: theme.textTheme.bodyMedium?.copyWith(
                             fontWeight: FontWeight.w700,
-                            color: AppThemeColors.textStrong,
+                            color: AppThemeColors.accent,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -159,7 +204,9 @@ class _ConduitConversationDrawerState
                             if (displayEmail.isNotEmpty)
                               Text(
                                 displayEmail,
-                                style: theme.textTheme.bodySmall,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: AppThemeColors.textMuted,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -357,11 +404,12 @@ class _SectionHeader extends StatelessWidget {
       child: Row(
         children: [
           Text(
-            label,
+            label.toUpperCase(),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.w700,
               color: AppThemeColors.textMuted,
-              fontSize: 11,
+              fontSize: 10,
+              letterSpacing: 0.8,
             ),
           ),
           if (count != null) ...[
@@ -400,9 +448,13 @@ class _ConversationTile extends ConsumerWidget {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
-      child: Material(
-        color: isSelected ? AppThemeColors.accentSoft : Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          color: isSelected ? AppThemeColors.accentSoft : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+        ),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
           onTap: () {
@@ -410,9 +462,22 @@ class _ConversationTile extends ConsumerWidget {
             Navigator.of(context).maybePop();
           },
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.only(left: 4, top: 10, right: 6, bottom: 10),
             child: Row(
               children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOutCubic,
+                  width: 3,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? AppThemeColors.accent
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -508,24 +573,32 @@ class _DrawerIconBtn extends StatelessWidget {
     required this.icon,
     required this.onTap,
     this.tooltip = '',
+    this.accent = false,
   });
 
   final IconData icon;
   final VoidCallback onTap;
   final String tooltip;
+  final bool accent;
 
   @override
   Widget build(BuildContext context) {
     final button = Material(
-      color: AppThemeColors.surface,
+      color: accent ? AppThemeColors.accent : AppThemeColors.surface,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: SizedBox(
-          width: 40,
-          height: 40,
-          child: Icon(icon, size: 18, color: AppThemeColors.textStrong),
+          width: 44,
+          height: 44,
+          child: Icon(
+            icon,
+            size: 18,
+            color: accent
+                ? (AppThemeColors.isDark ? Colors.black : Colors.white)
+                : AppThemeColors.textStrong,
+          ),
         ),
       ),
     );
