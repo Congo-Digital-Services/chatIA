@@ -41,12 +41,19 @@ class ChatIAApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
     final settings = ref.watch(settingsControllerProvider);
-    ref.watch(authControllerProvider);
+    final auth = ref.watch(authControllerProvider);
     ref.watch(chatControllerProvider);
+
+    if (auth.isRestoring) {
+      return _BrandedSplash(
+        isDark: _resolvesDark(context, settings.themeMode),
+        accentColor: settings.accentColor,
+      );
+    }
 
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
-      title: 'ChatIA',
+      title: 'LobaIA',
       theme: AppTheme.build(isDark: false, accentColor: settings.accentColor),
       darkTheme: AppTheme.build(
         isDark: true,
@@ -66,6 +73,51 @@ class ChatIAApp extends ConsumerWidget {
 
         return _MobileEmulatorWrapper(child: child ?? const SizedBox.shrink());
       },
+    );
+  }
+
+  static bool _resolvesDark(BuildContext context, ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.dark:
+        return true;
+      case ThemeMode.system:
+        return MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+      case ThemeMode.light:
+        return false;
+    }
+  }
+}
+
+class _BrandedSplash extends StatelessWidget {
+  const _BrandedSplash({required this.isDark, required this.accentColor});
+
+  final bool isDark;
+  final Color accentColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.build(isDark: isDark, accentColor: accentColor),
+      home: Scaffold(
+        backgroundColor: AppThemeColors.background,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset('assets/icons/congo_logo.png', width: 140),
+              const SizedBox(height: 20),
+              Text(
+                'LobaIA',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

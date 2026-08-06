@@ -4,11 +4,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/audio_recorder.dart';
+import '../../../core/services/tts_service.dart';
 import '../../../shared/models/chat_message.dart';
 import '../../../shared/models/conversation.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../providers/chat_state_provider.dart';
+import '../../settings/providers/settings_provider.dart';
 
 class MessageBubble extends ConsumerWidget {
   const MessageBubble({
@@ -24,10 +26,11 @@ class MessageBubble extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isUser = message.role == ChatRole.user;
     final theme = Theme.of(context);
+    final ttsEnabled = ref.watch(settingsControllerProvider).ttsEnabled;
 
     return GestureDetector(
       onLongPress: () => _showMessageActions(context, ref),
-      child: _buildBubble(context, theme, isUser),
+      child: _buildBubble(context, theme, isUser, ttsEnabled),
     );
   }
 
@@ -165,7 +168,12 @@ class MessageBubble extends ConsumerWidget {
     return true;
   }
 
-  Widget _buildBubble(BuildContext context, ThemeData theme, bool isUser) {
+  Widget _buildBubble(
+    BuildContext context,
+    ThemeData theme,
+    bool isUser,
+    bool ttsEnabled,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bubbleColor = isUser
         ? (isDark ? const Color(0xFF1E2330) : const Color(0xFFF2F4F8))
@@ -298,6 +306,21 @@ class MessageBubble extends ConsumerWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (ttsEnabled) ...[
+                        ValueListenableBuilder<bool>(
+                          valueListenable: ttsService.isSpeaking,
+                          builder: (context, isSpeaking, _) {
+                            return _AssistantAction(
+                              icon: isSpeaking
+                                  ? CupertinoIcons.stop_circle
+                                  : CupertinoIcons.volume_up,
+                              label: isSpeaking ? 'Arrêter' : 'Lire',
+                              onTap: () => ttsService.toggle(message.text),
+                            );
+                          },
+                        ),
+                        const SizedBox(width: 6),
+                      ],
                       _AssistantAction(
                         icon: CupertinoIcons.doc_on_doc,
                         label: 'Copier',

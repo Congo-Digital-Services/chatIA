@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/services/chatia_api_service.dart';
+import '../../../core/services/tts_service.dart';
 import '../../../shared/data/mock_data.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../auth/providers/auth_state_provider.dart';
@@ -65,12 +66,28 @@ class SettingsPage extends ConsumerWidget {
                   title: 'Thème',
                   value: _themeLabel(settings.themeMode),
                   onTap: () => _showThemeSheet(context, ref, settings),
+                  showDivider: false,
                 ),
-                _SettingsRow(
-                  icon: CupertinoIcons.globe,
-                  title: 'Langue',
-                  value: SettingsController.languageName(settings.language),
-                  onTap: () => _showLanguageSheet(context, ref, settings),
+              ],
+            ),
+            const SizedBox(height: 24),
+            const _SectionTitle('Voix & Lecture'),
+            const SizedBox(height: 10),
+            _SettingsGroup(
+              children: [
+                _SettingsToggleRow(
+                  icon: CupertinoIcons.volume_up,
+                  title: 'Lecture vocale des réponses',
+                  subtitle: 'Lire les réponses de LoBa IA à voix haute',
+                  value: settings.ttsEnabled,
+                  onChanged: (value) {
+                    if (!value) {
+                      ttsService.stop();
+                    }
+                    ref
+                        .read(settingsControllerProvider)
+                        .setTtsEnabled(value);
+                  },
                 ),
               ],
             ),
@@ -102,6 +119,7 @@ class SettingsPage extends ConsumerWidget {
                   title: 'À propos de LoBa IA',
                   subtitle: 'Version et informations de l’application',
                   onTap: () => _showAboutDialog(context),
+                  showDivider: false,
                 ),
               ],
             ),
@@ -189,50 +207,8 @@ class SettingsPage extends ConsumerWidget {
     );
   }
 
-  static Future<void> _showLanguageSheet(
-    BuildContext context,
-    WidgetRef ref,
-    SettingsController settings,
-  ) {
-    final entries = supportedLanguages.entries.toList()
-      ..sort((a, b) => a.value.compareTo(b.value));
-
-    return showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) {
-        return _SheetShell(
-          title: 'Langue',
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.58,
-            ),
-            child: ListView.separated(
-              shrinkWrap: true,
-              itemCount: entries.length,
-              separatorBuilder: (_, index) =>
-                  Divider(height: 1, color: AppThemeColors.stroke),
-              itemBuilder: (context, index) {
-                final entry = entries[index];
-                return _SelectableRow(
-                  title: entry.value,
-                  selected: entry.key == settings.language,
-                  onTap: () {
-                    ref.read(settingsControllerProvider).setLanguage(entry.key);
-                    Navigator.of(context).pop();
-                  },
-                );
-              },
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  static void _showGuidesDialog(BuildContext context) {
-    _showHelpDialog(
+  static Future<void> _showGuidesDialog(BuildContext context) {
+    return _showHelpDialog(
       context,
       icon: CupertinoIcons.book,
       title: 'Guides d’utilisation',
@@ -462,6 +438,7 @@ class _SettingsRow extends StatelessWidget {
     this.subtitle,
     this.value,
     this.onTap,
+    this.showDivider = true,
   });
 
   final IconData icon;
@@ -469,9 +446,7 @@ class _SettingsRow extends StatelessWidget {
   final String? subtitle;
   final String? value;
   final VoidCallback? onTap;
-
-  bool get _isLastRowWithoutDivider =>
-      title == 'Langue' || title == 'À propos de LoBa IA';
+  final bool showDivider;
 
   @override
   Widget build(BuildContext context) {
@@ -534,11 +509,81 @@ class _SettingsRow extends StatelessWidget {
             ),
           ),
         ),
-        if (!_isLastRowWithoutDivider)
+        if (showDivider)
           Padding(
             padding: const EdgeInsets.only(left: 50),
             child: Divider(height: 1, color: AppThemeColors.stroke),
           ),
+      ],
+    );
+  }
+}
+
+class _SettingsToggleRow extends StatelessWidget {
+  const _SettingsToggleRow({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => onChanged(!value),
+            borderRadius: BorderRadius.circular(24),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+              child: Row(
+                children: [
+                  Icon(icon, size: 20, color: AppThemeColors.textSoft),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            subtitle!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppThemeColors.textSoft,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  CupertinoSwitch(
+                    value: value,
+                    activeTrackColor: AppThemeColors.accent,
+                    onChanged: onChanged,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }

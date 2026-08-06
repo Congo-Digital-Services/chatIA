@@ -12,7 +12,6 @@ final tokenStorageServiceProvider = Provider<TokenStorageService>((ref) {
 class TokenStorageService {
   TokenStorageService()
     : _storage = const FlutterSecureStorage(
-        aOptions: AndroidOptions(encryptedSharedPreferences: true),
         iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
       );
 

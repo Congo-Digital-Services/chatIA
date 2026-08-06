@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:file_picker/file_picker.dart';
+import 'package:file_picker/file_picker.dart' hide FilePickerPlatform;
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 

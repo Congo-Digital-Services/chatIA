@@ -15,6 +15,7 @@ class SettingsController extends ChangeNotifier {
   String _shortcutAction =
       'none'; // 'none', 'voice_call', 'file_picker', 'create_note', 'new_chat'
   String _voiceEngine = 'local'; // 'local', 'server'
+  bool _ttsEnabled = true;
   bool _healthOnboardingSeen = false;
 
   ThemeMode get themeMode => _themeMode;
@@ -22,6 +23,7 @@ class SettingsController extends ChangeNotifier {
   String get language => _language;
   String get shortcutAction => _shortcutAction;
   String get voiceEngine => _voiceEngine;
+  bool get ttsEnabled => _ttsEnabled;
   bool get healthOnboardingSeen => _healthOnboardingSeen;
 
   // ── Persistence ──────────────────────────────────────────────────────────────
@@ -41,6 +43,7 @@ class SettingsController extends ChangeNotifier {
       _language = prefs.getString('language') ?? 'fr';
       _shortcutAction = prefs.getString('shortcutAction') ?? 'none';
       _voiceEngine = prefs.getString('voiceEngine') ?? 'local';
+      _ttsEnabled = prefs.getBool('ttsEnabled') ?? true;
       _healthOnboardingSeen = prefs.getBool('healthOnboardingSeen') ?? false;
       notifyListeners();
     } catch (_) {
@@ -61,6 +64,7 @@ class SettingsController extends ChangeNotifier {
       await prefs.setString('language', _language);
       await prefs.setString('shortcutAction', _shortcutAction);
       await prefs.setString('voiceEngine', _voiceEngine);
+      await prefs.setBool('ttsEnabled', _ttsEnabled);
       await prefs.setBool('healthOnboardingSeen', _healthOnboardingSeen);
     } catch (_) {}
   }
@@ -94,6 +98,12 @@ class SettingsController extends ChangeNotifier {
 
   void setVoiceEngine(String engine) {
     _voiceEngine = engine;
+    notifyListeners();
+    _save();
+  }
+
+  void setTtsEnabled(bool value) {
+    _ttsEnabled = value;
     notifyListeners();
     _save();
   }
