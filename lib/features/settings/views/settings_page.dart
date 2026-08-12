@@ -84,9 +84,7 @@ class SettingsPage extends ConsumerWidget {
                     if (!value) {
                       ttsService.stop();
                     }
-                    ref
-                        .read(settingsControllerProvider)
-                        .setTtsEnabled(value);
+                    ref.read(settingsControllerProvider).setTtsEnabled(value);
                   },
                 ),
               ],
@@ -175,8 +173,14 @@ class SettingsPage extends ConsumerWidget {
     return showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) {
-        return _SheetShell(
+      isScrollControlled: true,
+      builder: (context) => AnimatedPadding(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: _SheetShell(
           title: 'Thème',
           child: _ChoiceGroup<ThemeMode>(
             value: settings.themeMode,
@@ -202,8 +206,8 @@ class SettingsPage extends ConsumerWidget {
               Navigator.of(context).pop();
             },
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -271,67 +275,77 @@ class SettingsPage extends ConsumerWidget {
       context: context,
       builder: (ctx) {
         return Dialog(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Align(
-                  child: Container(
-                    width: 66,
-                    height: 66,
-                    decoration: BoxDecoration(
-                      color: AppThemeColors.accentSoft,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(icon, size: 30, color: AppThemeColors.accent),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleLarge,
-                ),
-                const SizedBox(height: 14),
-                for (final paragraph in paragraphs) ...[
-                  Text(
-                    paragraph,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: AppThemeColors.textSoft,
-                      height: 1.55,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                if (note != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppThemeColors.backgroundSoft,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Text(
-                      note,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: AppThemeColors.textMuted,
-                        height: 1.45,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 16,
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(ctx).height * .82,
+              maxWidth: 520,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Align(
+                    child: Container(
+                      width: 66,
+                      height: 66,
+                      decoration: BoxDecoration(
+                        color: AppThemeColors.accentSoft,
+                        shape: BoxShape.circle,
                       ),
+                      child: Icon(icon, size: 30, color: AppThemeColors.accent),
                     ),
                   ),
                   const SizedBox(height: 18),
-                ],
-                SizedBox(
-                  height: 50,
-                  child: FilledButton(
-                    onPressed: () => Navigator.of(ctx).pop(),
-                    child: const Text('Compris'),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleLarge,
                   ),
-                ),
-              ],
+                  const SizedBox(height: 14),
+                  for (final paragraph in paragraphs) ...[
+                    Text(
+                      paragraph,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppThemeColors.textSoft,
+                        height: 1.55,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (note != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppThemeColors.backgroundSoft,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(
+                        note,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AppThemeColors.textMuted,
+                          height: 1.45,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                  ],
+                  SizedBox(
+                    height: 50,
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: const Text('Compris'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );

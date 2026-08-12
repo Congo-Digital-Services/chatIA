@@ -149,6 +149,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
     return Scaffold(
       key: _scaffoldKey,
+      resizeToAvoidBottomInset: true,
       drawer: ConduitConversationDrawer(
         onSettingsTap: () => context.push('/settings'),
       ),
@@ -200,9 +201,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                     conversation: conversation,
                                   )
                                 : _mode == ChatMode.health
-                                ? const _HealthView(
-                                    key: ValueKey('health'),
-                                  )
+                                ? const _HealthView(key: ValueKey('health'))
                                 : _ConversationBody(
                                     key: const ValueKey('discussion'),
                                     chat: chat,
@@ -319,9 +318,7 @@ class _ModeTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = selected
-        ? AppThemeColors.accent
-        : AppThemeColors.textMuted;
+    final color = selected ? AppThemeColors.accent : AppThemeColors.textMuted;
 
     return InkWell(
       onTap: onTap,
@@ -370,9 +367,9 @@ class _HealthView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final showOnboarding = !ref.watch(
-      settingsControllerProvider,
-    ).healthOnboardingSeen;
+    final showOnboarding = !ref
+        .watch(settingsControllerProvider)
+        .healthOnboardingSeen;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
@@ -583,10 +580,7 @@ class _HealthFeatureRow extends StatelessWidget {
 }
 
 class _EmptyState extends ConsumerWidget {
-  const _EmptyState({
-    required this.theme,
-    required this.userName,
-  });
+  const _EmptyState({required this.theme, required this.userName});
 
   final ThemeData theme;
   final String userName;
@@ -668,10 +662,7 @@ class _ConversationBody extends StatelessWidget {
     }
 
     if (conversation.messages.isEmpty) {
-      return _EmptyState(
-        theme: theme,
-        userName: userName,
-      );
+      return _EmptyState(theme: theme, userName: userName);
     }
 
     final itemCount =
@@ -1035,6 +1026,8 @@ class _VoiceCallOverlayState extends State<_VoiceCallOverlay>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
 
     return Container(
       decoration: const BoxDecoration(
@@ -1046,7 +1039,10 @@ class _VoiceCallOverlayState extends State<_VoiceCallOverlay>
       ),
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          padding: EdgeInsets.symmetric(
+            horizontal: isLandscape ? 16 : 24,
+            vertical: isLandscape ? 12 : 32,
+          ),
           child: Column(
             children: [
               // Header
@@ -1129,7 +1125,7 @@ class _VoiceCallOverlayState extends State<_VoiceCallOverlay>
                   ),
                 ],
               ),
-              const SizedBox(height: 36),
+              SizedBox(height: isLandscape ? 14 : 36),
 
               // Title and state
               Text(
@@ -1150,14 +1146,14 @@ class _VoiceCallOverlayState extends State<_VoiceCallOverlay>
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              const SizedBox(height: 32),
+              SizedBox(height: isLandscape ? 12 : 32),
 
               // Waveform representation
               SizedBox(
-                height: 40,
+                height: isLandscape ? 24 : 40,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(24, (index) {
+                  children: List.generate(isLandscape ? 16 : 24, (index) {
                     final double height =
                         4.0 +
                         (index % 4 == 0
@@ -1166,7 +1162,9 @@ class _VoiceCallOverlayState extends State<_VoiceCallOverlay>
                             ? 16.0
                             : 8.0);
                     return Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 2.5),
+                      margin: EdgeInsets.symmetric(
+                        horizontal: isLandscape ? 1.5 : 2.5,
+                      ),
                       width: 3,
                       height: _callDuration < 3 ? 4.0 : height,
                       decoration: BoxDecoration(

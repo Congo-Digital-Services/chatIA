@@ -36,7 +36,12 @@ class _VerifyEmailPageState extends ConsumerState<VerifyEmailPage> {
           ? 'Ce lien de vérification est incomplet.'
           : (auth.isLoading
                 ? 'Vérification en cours…'
-                : (auth.errorMessage ?? auth.infoMessage ?? '')),
+                : (auth.errorMessage != null
+                      ? auth.errorMessage!
+                      : (auth.infoMessage != null
+                            ? 'Votre adresse e-mail a été vérifiée avec succès.\n'
+                                  'Vous pouvez maintenant vous connecter.'
+                            : ''))),
       isError: invalidLink || auth.errorMessage != null,
       actionLabel: 'Aller à la connexion',
       onAction: () => context.go('/login'),

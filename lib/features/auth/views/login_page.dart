@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/backend_config.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/button_loader.dart';
 import '../providers/auth_state_provider.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
@@ -16,16 +18,45 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   late final TextEditingController _email;
   late final TextEditingController _password;
   bool _hidePassword = true;
+  ProviderSubscription<AuthController>? _authSubscription;
+  String? _lastErrorToast;
+  String? _lastInfoToast;
 
   @override
   void initState() {
     super.initState();
     _email = TextEditingController(text: BackendConfig.authEmail);
     _password = TextEditingController(text: BackendConfig.authPassword);
+    _authSubscription = ref.listenManual<AuthController>(
+      authControllerProvider,
+      (previous, next) {
+        if (!mounted) return;
+        final error = next.errorMessage;
+        if (error == null || error.isEmpty) {
+          _lastErrorToast = null;
+        }
+        if (error != null && error.isNotEmpty && _lastErrorToast != error) {
+          _lastErrorToast = error;
+          showAppToast(context, message: error, type: AppToastType.error);
+        }
+        final info = next.infoMessage;
+        if (info != null && info.isNotEmpty && _lastInfoToast != info) {
+          _lastInfoToast = info;
+          showAppToast(
+            context,
+            message:
+                'Un nouvel e-mail de vérification a été envoyé. '
+                'Pensez à vérifier vos spams.',
+            type: AppToastType.success,
+          );
+        }
+      },
+    );
   }
 
   @override
   void dispose() {
+    _authSubscription?.close();
     _email.dispose();
     _password.dispose();
     super.dispose();
@@ -51,7 +82,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   children: [
                     Image.asset('assets/icons/congo_logo.png', height: 92),
                     const SizedBox(height: 20),
-                    Text('ChatIA', style: theme.textTheme.displaySmall),
+                    Text('LobaIA', style: theme.textTheme.displaySmall),
                     const SizedBox(height: 8),
                     Text(
                       'Votre espace de travail intelligent',
@@ -102,9 +133,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             child: FilledButton(
                               onPressed: auth.isLoading ? null : _signIn,
                               child: auth.isLoading
-                                  ? const CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    )
+                                  ? const ButtonLoader()
                                   : const Text('Se connecter'),
                             ),
                           ),
@@ -114,8 +143,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                 : () => context.go('/forgot-password'),
                             child: const Text('Mot de passe oublié ?'),
                           ),
-                          if (auth.errorMessage != null)
-                            _message(auth.errorMessage!, Colors.redAccent),
                           if (auth.errorMessage?.contains(
                                 'n’est pas vérifié',
                               ) ??
@@ -197,25 +224,20 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           : null,
     ),
   );
-  Widget _message(String text, Color color) => Padding(
-    padding: const EdgeInsets.only(top: 12),
-    child: Text(
-      text,
-      textAlign: TextAlign.center,
-      style: TextStyle(color: color),
-    ),
-  );
+
+  void _warn(String message) {
+    showAppToast(context, message: message, type: AppToastType.warning);
+  }
+
   void _signIn() {
     final email = _email.text.trim();
     final auth = ref.read(authControllerProvider);
     if (email.isEmpty || _password.text.isEmpty) {
-      auth.setErrorMessage(
-        'Veuillez remplir votre adresse e-mail et votre mot de passe.',
-      );
+      _warn('Veuillez remplir votre adresse e-mail et votre mot de passe.');
       return;
     }
     if (!email.contains('@')) {
-      auth.setErrorMessage('Veuillez renseigner une adresse e-mail valide.');
+      _warn('Veuillez renseigner une adresse e-mail valide.');
       return;
     }
     auth.signIn(email: email, password: _password.text);

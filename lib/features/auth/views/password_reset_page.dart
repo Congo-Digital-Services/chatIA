@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_success_dialog.dart';
+import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/button_loader.dart';
 import '../providers/auth_state_provider.dart';
 import 'verify_email_page.dart';
 
@@ -15,9 +20,28 @@ class ForgotPasswordPage extends ConsumerStatefulWidget {
 class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
   final _email = TextEditingController();
   bool _successDialogShown = false;
+  ProviderSubscription<AuthController>? _authSubscription;
+  String? _lastErrorToast;
+
+  @override
+  void initState() {
+    super.initState();
+    _authSubscription = ref.listenManual<AuthController>(
+      authControllerProvider,
+      (previous, next) {
+        if (!mounted) return;
+        final error = next.errorMessage;
+        if (error != null && error.isNotEmpty && _lastErrorToast != error) {
+          _lastErrorToast = error;
+          showAppToast(context, message: error, type: AppToastType.error);
+        }
+      },
+    );
+  }
 
   @override
   void dispose() {
+    _authSubscription?.close();
     _email.dispose();
     super.dispose();
   }
@@ -140,38 +164,12 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
                             child: FilledButton(
                               onPressed: auth.isLoading ? null : _requestReset,
                               child: auth.isLoading
-                                  ? const CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    )
+                                  ? const ButtonLoader()
                                   : const Text(
                                       'Envoyer le lien de réinitialisation',
                                     ),
                             ),
                           ),
-                          if (auth.errorMessage != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 14),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(
-                                    Icons.error_outline_rounded,
-                                    size: 16,
-                                    color: Colors.redAccent,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Flexible(
-                                    child: Text(
-                                      auth.errorMessage!,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        color: Colors.redAccent,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
                         ],
                       ),
                     ),
@@ -185,12 +183,14 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
     );
   }
 
+  void _warn(String message) {
+    showAppToast(context, message: message, type: AppToastType.warning);
+  }
+
   void _requestReset() {
     final email = _email.text.trim();
     if (email.isEmpty || !_isValidEmail(email)) {
-      ref
-          .read(authControllerProvider)
-          .setErrorMessage('Veuillez renseigner une adresse e-mail valide.');
+      _warn('Veuillez renseigner une adresse e-mail valide.');
       return;
     }
     _successDialogShown = false;
@@ -204,67 +204,16 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
   }
 
   Future<void> _showSuccessDialog(String email) async {
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        final target = email.isEmpty ? 'votre adresse e-mail' : email;
-        return Dialog(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Align(
-                  child: Container(
-                    width: 66,
-                    height: 66,
-                    decoration: BoxDecoration(
-                      color: AppThemeColors.accentSoft,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.mark_email_read_outlined,
-                      size: 30,
-                      color: AppThemeColors.accent,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  'E-mail envoyé !',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleLarge,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Un lien de réinitialisation a été envoyé à $target.\n\n'
-                  'Vérifiez votre boîte de réception, ainsi que vos spams, '
-                  'puis cliquez sur le lien pour créer votre nouveau mot de passe.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: AppThemeColors.textSoft,
-                    height: 1.55,
-                  ),
-                ),
-                const SizedBox(height: 22),
-                SizedBox(
-                  height: 50,
-                  child: FilledButton(
-                    onPressed: () {
-                      ref.read(authControllerProvider).clearMessages();
-                      Navigator.of(ctx).pop();
-                      context.go('/login');
-                    },
-                    child: const Text('Compris'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
+    final target = email.isEmpty ? 'votre adresse e-mail' : email;
+    await showAppSuccessDialog(
+      context,
+      title: 'E-mail envoyé !',
+      message: 'Un lien de réinitialisation a été envoyé à $target.\n\n'
+          'Vérifiez votre boîte de réception, ainsi que vos spams, '
+          'puis cliquez sur le lien pour créer votre nouveau mot de passe.',
+      onDone: () {
+        ref.read(authControllerProvider).clearMessages();
+        context.go('/login');
       },
     );
   }
@@ -285,8 +234,28 @@ class ResetPasswordPage extends ConsumerStatefulWidget {
 class _ResetPasswordPageState extends ConsumerState<ResetPasswordPage> {
   final _password = TextEditingController();
   final _confirmation = TextEditingController();
+  ProviderSubscription<AuthController>? _authSubscription;
+  String? _lastErrorToast;
+
+  @override
+  void initState() {
+    super.initState();
+    _authSubscription = ref.listenManual<AuthController>(
+      authControllerProvider,
+      (previous, next) {
+        if (!mounted) return;
+        final error = next.errorMessage;
+        if (error != null && error.isNotEmpty && _lastErrorToast != error) {
+          _lastErrorToast = error;
+          showAppToast(context, message: error, type: AppToastType.error);
+        }
+      },
+    );
+  }
+
   @override
   void dispose() {
+    _authSubscription?.close();
     _password.dispose();
     _confirmation.dispose();
     super.dispose();
@@ -299,7 +268,9 @@ class _ResetPasswordPageState extends ConsumerState<ResetPasswordPage> {
     if (auth.infoMessage != null)
       return AuthResultScaffold(
         title: 'Mot de passe modifié',
-        message: auth.infoMessage!,
+        message:
+            'Votre mot de passe a été modifié avec succès.\n'
+            'Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.',
         isError: false,
         actionLabel: 'Se connecter',
         onAction: () => context.go('/login'),
@@ -345,18 +316,11 @@ class _ResetPasswordPageState extends ConsumerState<ResetPasswordPage> {
                   const SizedBox(height: 16),
                   FilledButton(
                     onPressed: auth.isLoading ? null : _submit,
-                    child: const Text('Enregistrer le mot de passe'),
+                    child: auth.isLoading
+                        ? const ButtonLoader()
+                        : const Text('Enregistrer le mot de passe'),
                   ),
                 ],
-                if (auth.errorMessage != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 16),
-                    child: Text(
-                      auth.errorMessage!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.redAccent),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -365,19 +329,17 @@ class _ResetPasswordPageState extends ConsumerState<ResetPasswordPage> {
     );
   }
 
+  void _warn(String message) {
+    showAppToast(context, message: message, type: AppToastType.warning);
+  }
+
   void _submit() {
     if (_password.text.length < 8) {
-      ref
-          .read(authControllerProvider)
-          .setErrorMessage(
-            'Le mot de passe doit contenir au moins 8 caractères.',
-          );
+      _warn('Le mot de passe doit contenir au moins 8 caractères.');
       return;
     }
     if (_password.text != _confirmation.text) {
-      ref
-          .read(authControllerProvider)
-          .setErrorMessage('Les mots de passe ne correspondent pas.');
+      _warn('Les mots de passe ne correspondent pas.');
       return;
     }
     ref

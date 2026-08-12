@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_success_dialog.dart';
+import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/button_loader.dart';
 import '../providers/auth_state_provider.dart';
 
 class RegisterPage extends ConsumerStatefulWidget {
@@ -18,9 +21,33 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   final _password = TextEditingController();
   final _confirmation = TextEditingController();
   bool _hidePassword = true;
+  bool _successDialogShown = false;
+  ProviderSubscription<AuthController>? _authSubscription;
+  String? _lastErrorToast;
+
+  @override
+  void initState() {
+    super.initState();
+    _authSubscription = ref.listenManual<AuthController>(
+      authControllerProvider,
+      (previous, next) {
+        if (!mounted) return;
+        final error = next.errorMessage;
+        if (error == null || error.isEmpty) {
+          _lastErrorToast = null;
+          return;
+        }
+        if (_lastErrorToast != error) {
+          _lastErrorToast = error;
+          showAppToast(context, message: error, type: AppToastType.error);
+        }
+      },
+    );
+  }
 
   @override
   void dispose() {
+    _authSubscription?.close();
     _name.dispose();
     _username.dispose();
     _email.dispose();
@@ -33,6 +60,20 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
     final theme = Theme.of(context);
+
+    final success =
+        auth.infoMessage != null &&
+        auth.errorMessage == null &&
+        !auth.isLoading;
+    if (success && !_successDialogShown) {
+      _successDialogShown = true;
+      final email = _email.text.trim();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _showSuccessDialog(email);
+      });
+    }
+
     return Scaffold(
       backgroundColor: AppThemeColors.background,
       body: DecoratedBox(
@@ -122,28 +163,10 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                         child: FilledButton(
                           onPressed: auth.isLoading ? null : _register,
                           child: auth.isLoading
-                              ? const CircularProgressIndicator(strokeWidth: 2)
+                              ? const ButtonLoader()
                               : const Text('Créer mon compte'),
                         ),
                       ),
-                      if (auth.infoMessage != null)
-                        _message(auth.infoMessage!, Colors.green),
-                      if (auth.errorMessage != null)
-                        _message(auth.errorMessage!, Colors.redAccent),
-                      if (auth.infoMessage != null)
-                        TextButton.icon(
-                          onPressed: auth.isLoading
-                              ? null
-                              : () => ref
-                                    .read(authControllerProvider)
-                                    .resendVerificationEmail(
-                                      _email.text.trim(),
-                                    ),
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: const Text(
-                            'Renvoyer l’e-mail de vérification',
-                          ),
-                        ),
                     ],
                   ),
                 ),
@@ -155,14 +178,6 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     );
   }
 
-  Widget _message(String message, Color color) => Padding(
-    padding: const EdgeInsets.only(top: 16),
-    child: Text(
-      message,
-      textAlign: TextAlign.center,
-      style: TextStyle(color: color),
-    ),
-  );
   Widget _field(
     TextEditingController controller,
     String label,
@@ -190,38 +205,71 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           : null,
     ),
   );
+
+  void _warn(String message) {
+    showAppToast(context, message: message, type: AppToastType.warning);
+  }
+
+  Future<void> _showSuccessDialog(String email) async {
+    final target = email.isEmpty ? 'votre adresse e-mail' : email;
+    await showAppSuccessDialog(
+      context,
+      title: 'Inscription réussie',
+      message:
+          'Pour activer votre compte, un e-mail de vérification a été '
+          'envoyé à $target.\n\n'
+          'Ouvrez-le puis cliquez sur le lien de confirmation (ou saisissez '
+          'le code fourni) pour vérifier votre compte.\n'
+          'Pensez également à vérifier vos spams.',
+      onDone: () {
+        ref.read(authControllerProvider).clearMessages();
+        context.go('/login');
+      },
+    );
+  }
+
   void _register() {
     final auth = ref.read(authControllerProvider);
     final name = _name.text.trim();
     final username = _username.text.trim();
     final email = _email.text.trim();
-    if (name.length < 3 ||
-        email.isEmpty ||
-        _password.text.isEmpty ||
-        _confirmation.text.isEmpty) {
-      auth.setErrorMessage('Veuillez remplir tous les champs obligatoires.');
+    if (name.isEmpty) {
+      _warn('Veuillez renseigner votre nom complet.');
+      return;
+    }
+    if (name.length < 3) {
+      _warn('Le nom complet doit contenir au moins 3 caractères.');
+      return;
+    }
+    if (email.isEmpty) {
+      _warn('Veuillez renseigner votre adresse e-mail.');
       return;
     }
     if (!email.contains('@')) {
-      auth.setErrorMessage('Veuillez renseigner une adresse e-mail valide.');
+      _warn('Veuillez renseigner une adresse e-mail valide.');
       return;
     }
-    if (username.isNotEmpty && (username.length < 2 || username.length > 80)) {
-      auth.setErrorMessage(
-        'Le nom d’utilisateur doit contenir entre 2 et 80 caractères.',
-      );
+    if (_password.text.isEmpty) {
+      _warn('Veuillez renseigner votre mot de passe.');
       return;
     }
     if (_password.text.length < 8 || _password.text.length > 128) {
-      auth.setErrorMessage(
-        'Le mot de passe doit contenir entre 8 et 128 caractères.',
-      );
+      _warn('Le mot de passe doit contenir entre 8 et 128 caractères.');
+      return;
+    }
+    if (_confirmation.text.isEmpty) {
+      _warn('Veuillez confirmer votre mot de passe.');
       return;
     }
     if (_password.text != _confirmation.text) {
-      auth.setErrorMessage('Les mots de passe ne correspondent pas.');
+      _warn('Les mots de passe ne correspondent pas.');
       return;
     }
+    if (username.isNotEmpty && (username.length < 2 || username.length > 80)) {
+      _warn('Le nom d’utilisateur doit contenir entre 2 et 80 caractères.');
+      return;
+    }
+    _successDialogShown = false;
     auth.register(
       name: name,
       username: username,

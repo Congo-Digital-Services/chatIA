@@ -36,6 +36,8 @@ class ChatController extends ChangeNotifier {
   bool isStreaming = false;
   bool _hasStreamingResponseStarted = false;
   StreamSubscription<ChatStreamEvent>? _activeStreamSubscription;
+  Completer<void>? _activeStreamCompleter;
+  int _streamRunId = 0;
   String searchQuery = '';
   String? errorMessage;
   String? infoMessage;
@@ -79,6 +81,14 @@ class ChatController extends ChangeNotifier {
       .toList();
 
   void resetForFreshStart() {
+    _streamRunId++;
+    _activeStreamSubscription?.cancel();
+    _activeStreamSubscription = null;
+    final completer = _activeStreamCompleter;
+    _activeStreamCompleter = null;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
+    }
     _loadedConversationIds.clear();
     _loadingConversationIds.clear();
     _loadingMoreConversationIds.clear();
@@ -638,11 +648,20 @@ class ChatController extends ChangeNotifier {
   }
 
   Future<void> cancelStreaming() async {
+    // Completer la requête en attente est aussi important que fermer le flux :
+    // sans cela, la méthode d'envoi restait suspendue après avoir touché Stop.
+    _streamRunId++;
     await _activeStreamSubscription?.cancel();
     _activeStreamSubscription = null;
+    final completer = _activeStreamCompleter;
+    _activeStreamCompleter = null;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
+    }
     if (isStreaming) {
       isStreaming = false;
       _hasStreamingResponseStarted = false;
+      infoMessage = 'Réponse interrompue.';
       notifyListeners();
     }
   }
@@ -923,8 +942,7 @@ class ChatController extends ChangeNotifier {
         subtitle: cleaned,
       );
 
-      final resolvedAgentId =
-          agentId?.trim().isNotEmpty == true
+      final resolvedAgentId = agentId?.trim().isNotEmpty == true
           ? agentId!.trim()
           : BackendConfig.chatAgentId;
       _ensureConversationMatchesAgent(resolvedAgentId);
@@ -1001,6 +1019,8 @@ class ChatController extends ChangeNotifier {
     required String errorPrefix,
   }) async {
     final completer = Completer<void>();
+    final runId = ++_streamRunId;
+    _activeStreamCompleter = completer;
     var accumulated = '';
     String? finalConversationId;
 
@@ -1008,6 +1028,7 @@ class ChatController extends ChangeNotifier {
       await _activeStreamSubscription?.cancel();
       _activeStreamSubscription = stream.listen(
         (event) {
+          if (runId != _streamRunId) return;
           if (event.conversationId != null &&
               event.conversationId!.isNotEmpty) {
             finalConversationId = event.conversationId!;
@@ -1043,6 +1064,7 @@ class ChatController extends ChangeNotifier {
           }
         },
         onError: (error, _) {
+          if (runId != _streamRunId) return;
           _hasStreamingResponseStarted = true;
           _updateAssistantMessage(assistantId, '$errorPrefix : $error');
           if (!completer.isCompleted) {
@@ -1050,6 +1072,7 @@ class ChatController extends ChangeNotifier {
           }
         },
         onDone: () {
+          if (runId != _streamRunId) return;
           if (!completer.isCompleted) {
             completer.complete();
           }
@@ -1059,15 +1082,20 @@ class ChatController extends ChangeNotifier {
 
       await completer.future;
 
-      if (finalConversationId != null && finalConversationId!.isNotEmpty) {
+      if (runId == _streamRunId &&
+          finalConversationId != null &&
+          finalConversationId!.isNotEmpty) {
         await _loadConversationMessages(finalConversationId!, reset: true);
       }
     } finally {
-      await _activeStreamSubscription?.cancel();
-      _activeStreamSubscription = null;
-      isStreaming = false;
-      _hasStreamingResponseStarted = false;
-      notifyListeners();
+      if (runId == _streamRunId) {
+        await _activeStreamSubscription?.cancel();
+        _activeStreamSubscription = null;
+        _activeStreamCompleter = null;
+        isStreaming = false;
+        _hasStreamingResponseStarted = false;
+        notifyListeners();
+      }
     }
   }
 

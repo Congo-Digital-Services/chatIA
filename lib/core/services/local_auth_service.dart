@@ -160,8 +160,11 @@ class LocalAuthService implements AuthService {
       _logAuthDebug('register', 'body=${response.body}');
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
+        final serverMessage = _responseMessage(response);
         throw Exception(
-          'Inscription impossible : ${response.statusCode} ${response.body}',
+          serverMessage.isNotEmpty
+              ? serverMessage
+              : 'Inscription impossible. Veuillez réessayer.',
         );
       }
 

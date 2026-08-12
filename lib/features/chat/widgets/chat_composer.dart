@@ -14,7 +14,7 @@ import '../providers/chat_state_provider.dart';
 
 class ChatComposer extends ConsumerStatefulWidget {
   const ChatComposer({
-    super.key, 
+    super.key,
     required this.onSend,
     required this.userName,
     required this.isAwaitingResponse,
@@ -139,9 +139,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
     }
   }
 
-  Future<void> _pickFileWith(
-    Future<PickedFileInfo?> Function() pick,
-  ) async {
+  Future<void> _pickFileWith(Future<PickedFileInfo?> Function() pick) async {
     try {
       final info = await pick();
       if (info == null) {
@@ -266,13 +264,21 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
     final isBusy = chat.isStreaming;
     final hasAction =
         _controller.text.trim().isNotEmpty || _attachedFile != null;
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
 
     if (widget.mode == ChatMode.health) {
-      return _buildHealthComposer(context, isBusy: isBusy);
+      return _buildHealthComposer(
+        context,
+        isBusy: isBusy,
+        isLandscape: isLandscape,
+      );
     }
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.fromLTRB(16, 0, 16, isLandscape ? 8 : 18),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: AppThemeColors.background,
@@ -354,7 +360,20 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                                   ),
                             ),
                           ),
-                          if (!hasAction)
+                          if (isBusy)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                right: 6,
+                                bottom: 6,
+                                top: 6,
+                              ),
+                              child: _StopButton(
+                                onTap: () => ref
+                                    .read(chatControllerProvider)
+                                    .cancelStreaming(),
+                              ),
+                            )
+                          else if (!hasAction)
                             FadeTransition(
                               opacity: _micOpacity,
                               child: IgnorePointer(
@@ -372,8 +391,8 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                                   ),
                                 ),
                               ),
-                            ),
-                          if (hasAction)
+                            )
+                          else if (hasAction)
                             ScaleTransition(
                               scale: _sendScale,
                               child: Padding(
@@ -398,9 +417,15 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
     );
   }
 
-  Widget _buildHealthComposer(BuildContext context, {required bool isBusy}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+  Widget _buildHealthComposer(
+    BuildContext context, {
+    required bool isBusy,
+    required bool isLandscape,
+  }) {
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.fromLTRB(16, 0, 16, isLandscape ? 8 : 18),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: AppThemeColors.background,
@@ -451,36 +476,70 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
   }
 
   Widget _buildRecordingBar(BuildContext context, {required bool isBusy}) {
-    return Row(
-      children: [
-        const SizedBox(width: 16),
-        const _BlinkingRedDot(),
-        const SizedBox(width: 10),
-        Text(
-          _formatDuration(_recordDurationSeconds),
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        const Expanded(
-          child: Center(child: _LiveWaveform()),
-        ),
-        _ComposerIconBtn(
-          icon: CupertinoIcons.trash,
-          onTap: _cancelRecording,
-          tooltip: 'Annuler',
-        ),
-        const SizedBox(width: 4),
-        Padding(
-          padding: const EdgeInsets.only(right: 6, bottom: 6, top: 6),
-          child: _SendButton(
-            onTap: isBusy ? null : _sendRecording,
-            isLoading: isBusy,
-          ),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 340;
+        return Row(
+          children: [
+            SizedBox(width: compact ? 10 : 16),
+            const _BlinkingRedDot(),
+            const SizedBox(width: 8),
+            Text(
+              _formatDuration(_recordDurationSeconds),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            if (!compact)
+              const Expanded(child: Center(child: _LiveWaveform()))
+            else
+              const Spacer(),
+            _ComposerIconBtn(
+              icon: CupertinoIcons.trash,
+              onTap: _cancelRecording,
+              tooltip: 'Annuler',
+            ),
+            const SizedBox(width: 4),
+            Padding(
+              padding: const EdgeInsets.only(right: 6, bottom: 6, top: 6),
+              child: _SendButton(
+                onTap: isBusy ? null : _sendRecording,
+                isLoading: isBusy,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
+}
+
+class _StopButton extends StatelessWidget {
+  const _StopButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: 'Arrêter la réponse',
+    child: Material(
+      color: const Color(0xFFFFE9E7),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: const SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(
+            CupertinoIcons.stop_fill,
+            size: 18,
+            color: Color(0xFFCC3B32),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class _AttachmentPreview extends StatelessWidget {
@@ -793,14 +852,14 @@ class _FileSourceSheet extends StatelessWidget {
     return AnimatedPadding(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOutCubic,
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: Container(
         decoration: BoxDecoration(
           color: AppThemeColors.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          border: Border(
-            top: BorderSide(color: AppThemeColors.stroke),
-          ),
+          border: Border(top: BorderSide(color: AppThemeColors.stroke)),
         ),
         child: SafeArea(
           top: false,
@@ -835,8 +894,9 @@ class _FileSourceSheet extends StatelessWidget {
                 return _FileSourceRow(
                   item: item,
                   isLast: index == items.length - 1,
-                  onTap: () =>
-                      Navigator.of(context).pop(_FileSourceChoice.values[index]),
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pop(_FileSourceChoice.values[index]),
                 );
               }),
               const SizedBox(height: 16),

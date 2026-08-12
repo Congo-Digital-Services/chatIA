@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -121,7 +123,7 @@ class AuthController extends ChangeNotifier {
       if (kDebugMode) {
         debugPrint('[AuthController][signIn] error=$error');
       }
-      errorMessage = error.toString().replaceFirst('Exception: ', '');
+      errorMessage = _friendlyErrorMessage(error);
     } finally {
       isLoading = false;
       notifyListeners();
@@ -161,7 +163,7 @@ class AuthController extends ChangeNotifier {
         confirmPassword: confirmPassword,
       );
     } catch (error) {
-      errorMessage = error.toString().replaceFirst('Exception: ', '');
+      errorMessage = _friendlyErrorMessage(error);
     } finally {
       isLoading = false;
       notifyListeners();
@@ -198,7 +200,7 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
       infoMessage = await action();
     } catch (error) {
-      errorMessage = error.toString().replaceFirst('Exception: ', '');
+      errorMessage = _friendlyErrorMessage(error);
     } finally {
       isLoading = false;
       notifyListeners();
@@ -267,5 +269,19 @@ class AuthController extends ChangeNotifier {
         'Impossible de fermer la session LibreChat : ${response.statusCode}',
       );
     }
+  }
+
+  String _friendlyErrorMessage(Object error) {
+    final message = error.toString().replaceFirst('Exception: ', '');
+    if (error is http.ClientException ||
+        error is TimeoutException ||
+        message.contains('SocketException') ||
+        message.contains('ClientException') ||
+        message.contains('Failed host lookup') ||
+        message.contains('Connection refused')) {
+      return 'Impossible de contacter le serveur. '
+          'Vérifiez votre connexion internet puis réessayez.';
+    }
+    return message;
   }
 }
