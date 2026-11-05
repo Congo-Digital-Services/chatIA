@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'maloba_glyph.dart';
 
 class ChatiaLogo extends StatelessWidget {
   const ChatiaLogo({super.key});
@@ -9,11 +10,10 @@ class ChatiaLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Image.asset(
-          'assets/icons/congo_logo.png',
+        const SizedBox(
           width: 54,
           height: 54,
-          fit: BoxFit.contain,
+          child: Center(child: MalobaGlyph(size: 44)),
         ),
         const SizedBox(width: 12),
         Column(

@@ -31,7 +31,11 @@ class ChatiaApiService {
   static const agentsEndpoint = 'agents';
   static const uploadsEndpoint = 'openAI';
   static const _sseRetryableStatusCodes = {404};
-  static const _sseMaxConnectionAttempts = 5;
+  // Le flux est créé AVANT la réponse au démarrage : un 404 ensuite veut
+  // presque toujours dire que la réponse est déjà finie (agents rapides,
+  // ex. traduction en 0,5 s). Un seul nouvel essai, puis relecture de la
+  // réponse enregistrée (voir sendAgentChat) — au lieu de 2,5 s d'attente.
+  static const _sseMaxConnectionAttempts = 2;
 
   final String baseUrl;
   final LibreChatSessionService sessionService;
@@ -393,6 +397,7 @@ class ChatiaApiService {
     String? conversationId,
     List<Map<String, dynamic>>? files,
     String spec = 'assistant-global',
+    bool isTemporary = false,
   }) async {
     _logAuthDebug('POST /api/agents/chat/$agentsEndpoint');
     _logRequestDebug(
@@ -412,7 +417,7 @@ class ChatiaApiService {
       'spec': spec,
       'agent_id': agentId,
       'key': DateTime.now().toUtc().toIso8601String(),
-      'isTemporary': false,
+      'isTemporary': isTemporary,
       'isRegenerate': false,
       'isContinued': false,
       'ephemeralAgent': {
@@ -454,6 +459,7 @@ class ChatiaApiService {
     bool resume = false,
     List<Map<String, dynamic>>? files,
     String spec = 'assistant-global',
+    bool isTemporary = false,
   }) async* {
     final startResponse = await startAgentChat(
       agentId: agentId,
@@ -463,6 +469,7 @@ class ChatiaApiService {
       text: text,
       files: files,
       spec: spec,
+      isTemporary: isTemporary,
     );
 
     final streamId = startResponse.streamId;
@@ -470,13 +477,134 @@ class ChatiaApiService {
       throw Exception('StreamId manquant depuis le backend (agent).');
     }
 
-    await for (final event in streamChat(
-      streamId,
-      resume: resume,
-      fallbackConversationId: startResponse.conversationId,
-    )) {
-      yield event;
+    try {
+      await for (final event in streamChat(
+        streamId,
+        resume: resume,
+        fallbackConversationId: startResponse.conversationId,
+      )) {
+        yield event;
+      }
+    } on SseStreamNotFoundException {
+      // Réponse plus rapide que la connexion au flux : LibreChat a déjà clos
+      // le flux (404), mais la réponse est enregistrée. On la relit.
+      final convoId = [startResponse.conversationId, conversationId]
+          .whereType<String>()
+          .where((id) => id.isNotEmpty && id != 'new')
+          .firstOrNull;
+      if (convoId == null) {
+        throw Exception(
+          'Échec de connexion au flux SSE : 404 (conversation inconnue)',
+        );
+      }
+      ChatStreamEvent? saved;
+      try {
+        saved = await _fetchSavedReply(
+          convoId,
+          messageId,
+          sentParentMessageId: parentMessageId,
+          sentText: text,
+        );
+      } catch (error) {
+        debugPrint('[ChatIA] relecture de la réponse impossible : $error');
+      }
+      // Réponse introuvable : un événement final sans texte, mais avec la
+      // conversation, fait recharger l'historique par l'écran de discussion,
+      // qui affichera la réponse dès qu'elle est enregistrée.
+      yield saved ??
+          ChatStreamEvent(
+            conversationId: convoId,
+            content: '',
+            done: true,
+            event: 'final',
+          );
     }
+  }
+
+  /// Réponse enregistrée au message envoyé, ou null.
+  /// Quelques essais : l'enregistrement peut suivre de peu la fin du flux.
+  ///
+  /// LibreChat IGNORE le `messageId` envoyé : il donne au message utilisateur
+  /// son propre identifiant (BaseClient.setMessageOptions : seul
+  /// `overrideUserMessageId` est repris), que le client apprend par l'événement
+  /// `created` du flux. Flux perdu (404), on ne le connaît pas : on retrouve le
+  /// message envoyé par son parent et son texte, puis la réponse dont il est le
+  /// parent. Chercher la réponse par [userMessageId] seul ne trouvait jamais
+  /// rien (29/10/2026 : réponse en base, six relectures vides).
+  Future<ChatStreamEvent?> _fetchSavedReply(
+    String conversationId,
+    String userMessageId, {
+    String? sentParentMessageId,
+    String? sentText,
+  }) async {
+    for (var attempt = 1; attempt <= 6; attempt++) {
+      final response = await _sendJson(
+        'GET',
+        '/api/messages',
+        queryParameters: {
+          'conversationId': conversationId,
+          'pageSize': '50',
+          'sortBy': 'createdAt',
+          'sortDirection': 'desc',
+        },
+      );
+      if (response.statusCode == 200) {
+        final messages = _extractMessagesList(jsonDecode(response.body))
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .map((m) => _asMap(m['responseMessage']) ?? m)
+            .toList();
+        // Identifiants possibles du message envoyé : celui du client (si le
+        // serveur l'a repris) puis celui que le serveur lui a donné.
+        final sentIds = <String>{userMessageId};
+        final wanted = sentText?.trim();
+        if (sentParentMessageId != null &&
+            wanted != null &&
+            wanted.isNotEmpty) {
+          for (final m in messages) {
+            if (m['isCreatedByUser'] == true &&
+                m['parentMessageId']?.toString() == sentParentMessageId &&
+                (m['text']?.toString().trim() ?? '') == wanted) {
+              final id = m['messageId']?.toString();
+              if (id != null && id.isNotEmpty) sentIds.add(id);
+            }
+          }
+        }
+        // Liste du plus récent au plus ancien : la première réponse trouvée
+        // est celle du dernier envoi.
+        final reply = messages
+            .where(
+              (m) =>
+                  sentIds.contains(m['parentMessageId']?.toString()) &&
+                  m['isCreatedByUser'] != true,
+            )
+            .firstOrNull;
+        if (reply != null) {
+          var text = _extractTextFromContent(reply['content']);
+          if (text.isEmpty) text = reply['text']?.toString() ?? '';
+          if (reply['error'] == true) {
+            return ChatStreamEvent.error(
+              error: _cleanStreamError(text),
+              rawEvent: 'final',
+              rawPayload: reply,
+              conversationId: conversationId,
+            );
+          }
+          if (text.isNotEmpty) {
+            return ChatStreamEvent(
+              conversationId: conversationId,
+              content: text,
+              done: true,
+              event: 'final',
+              rawPayload: reply,
+              responseMessage: reply,
+            );
+          }
+        }
+      }
+      await Future<void>.delayed(Duration(milliseconds: attempt * 400));
+    }
+    return null;
   }
 
   Future<UploadedFileInfo> uploadImageFile({
@@ -801,9 +929,11 @@ class ChatiaApiService {
         connection = null;
         if (!shouldRetry) {
           controller.addError(
-            Exception(
-              'Échec de connexion au flux SSE : ${response.statusCode}',
-            ),
+            response.statusCode == 404
+                ? SseStreamNotFoundException(streamId)
+                : Exception(
+                    'Échec de connexion au flux SSE : ${response.statusCode}',
+                  ),
           );
           await controller.close();
           return;
@@ -942,12 +1072,11 @@ class ChatiaApiService {
 
     if (normalizedEvent == 'error' || resolvedEvent == 'error') {
       return ChatStreamEvent.error(
-        error:
-            _cleanStreamError(
-              payload['error']?.toString() ??
-                  payload['message']?.toString() ??
-                  'Erreur SSE inconnue',
-            ),
+        error: _cleanStreamError(
+          payload['error']?.toString() ??
+              payload['message']?.toString() ??
+              'Erreur SSE inconnue',
+        ),
         rawEvent: resolvedEvent,
         rawPayload: payload,
         conversationId:
@@ -966,7 +1095,12 @@ class ChatiaApiService {
       );
     }
 
-    final content = _extractMessageText(payload, resolvedEvent: resolvedEvent);
+    var content = _extractMessageText(payload, resolvedEvent: resolvedEvent);
+    // Une erreur serveur peut arriver comme texte de réponse (message final) :
+    // on la reformule plutôt que d'afficher la trace brute de LiteLLM.
+    if (content.isNotEmpty && _looksLikeBackendError(content)) {
+      content = _cleanStreamError(content);
+    }
     final isFinal =
         payload['final'] == true ||
         _hasChoiceFinishReason(payload) ||
@@ -1295,8 +1429,7 @@ class ChatiaApiService {
       if (block['type']?.toString() != 'error') {
         continue;
       }
-      final message =
-          block['error']?.toString() ?? block['text']?.toString();
+      final message = block['error']?.toString() ?? block['text']?.toString();
       if (message != null && message.trim().isNotEmpty) {
         return _cleanStreamError(message);
       }
@@ -1317,6 +1450,14 @@ class ChatiaApiService {
   /// Nettoie un message d'erreur serveur : retire les balises HTML et
   /// reformule les erreurs HTTP (502 Bad Gateway, etc.).
   String _cleanStreamError(String raw) {
+    // Modèle hors ligne (serveur des modèles éteint ou injoignable).
+    if (RegExp(
+      r'NotFoundError|No deployments available|Connection error|'
+      r'Hosted_vllmException|ServiceUnavailable|APIConnectionError',
+    ).hasMatch(raw)) {
+      return 'Le modèle de cet agent est indisponible pour le moment '
+          '(serveur des modèles hors ligne). Réessayez plus tard.';
+    }
     final statusMatch = RegExp(r'\b([45]\d{2})\b').firstMatch(raw);
     if (statusMatch != null) {
       final status = statusMatch.group(1)!;
@@ -1532,6 +1673,16 @@ class PaginatedMessagesResponse {
 
   final List<ChatMessage> messages;
   final String? nextCursor;
+}
+
+/// Flux SSE introuvable (404) : le plus souvent, la réponse est déjà terminée.
+class SseStreamNotFoundException implements Exception {
+  SseStreamNotFoundException(this.streamId);
+
+  final String streamId;
+
+  @override
+  String toString() => 'Exception: Échec de connexion au flux SSE : 404';
 }
 
 class ChatStreamEvent {

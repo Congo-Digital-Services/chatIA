@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../shared/theme/app_theme.dart';
+
 final settingsControllerProvider = ChangeNotifierProvider<SettingsController>((
   ref,
 ) {
@@ -10,13 +12,16 @@ final settingsControllerProvider = ChangeNotifierProvider<SettingsController>((
 
 class SettingsController extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.light;
-  Color _accentColor = const Color(0xFF18B489);
+  Color _accentColor = AppThemeColors.brandGreen;
   String _language = 'fr';
   String _shortcutAction =
       'none'; // 'none', 'voice_call', 'file_picker', 'create_note', 'new_chat'
   String _voiceEngine = 'local'; // 'local', 'server'
   bool _ttsEnabled = true;
   bool _healthOnboardingSeen = false;
+  // Dictée : la transcription est placée dans la zone de saisie pour être
+  // relue et corrigée avant l'envoi (le WER du modèle vocal est élevé).
+  bool _reviewVoiceBeforeSend = true;
 
   ThemeMode get themeMode => _themeMode;
   Color get accentColor => _accentColor;
@@ -25,6 +30,7 @@ class SettingsController extends ChangeNotifier {
   String get voiceEngine => _voiceEngine;
   bool get ttsEnabled => _ttsEnabled;
   bool get healthOnboardingSeen => _healthOnboardingSeen;
+  bool get reviewVoiceBeforeSend => _reviewVoiceBeforeSend;
 
   // ── Persistence ──────────────────────────────────────────────────────────────
   Future<void> loadFromPrefs() async {
@@ -37,7 +43,8 @@ class SettingsController extends ChangeNotifier {
           ? ThemeMode.system
           : ThemeMode.light;
       final accentVal = prefs.getInt('accentColor');
-      if (accentVal != null) {
+      // 0xFF18B489 : ancien vert par défaut, remplacé par le vert de la marque.
+      if (accentVal != null && accentVal != 0xFF18B489) {
         _accentColor = Color(accentVal);
       }
       _language = prefs.getString('language') ?? 'fr';
@@ -45,6 +52,7 @@ class SettingsController extends ChangeNotifier {
       _voiceEngine = prefs.getString('voiceEngine') ?? 'local';
       _ttsEnabled = prefs.getBool('ttsEnabled') ?? true;
       _healthOnboardingSeen = prefs.getBool('healthOnboardingSeen') ?? false;
+      _reviewVoiceBeforeSend = prefs.getBool('reviewVoiceBeforeSend') ?? true;
       notifyListeners();
     } catch (_) {
       // SharedPreferences not available (e.g. web without storage) — ignore
@@ -66,6 +74,7 @@ class SettingsController extends ChangeNotifier {
       await prefs.setString('voiceEngine', _voiceEngine);
       await prefs.setBool('ttsEnabled', _ttsEnabled);
       await prefs.setBool('healthOnboardingSeen', _healthOnboardingSeen);
+      await prefs.setBool('reviewVoiceBeforeSend', _reviewVoiceBeforeSend);
     } catch (_) {}
   }
 
@@ -104,6 +113,12 @@ class SettingsController extends ChangeNotifier {
 
   void setTtsEnabled(bool value) {
     _ttsEnabled = value;
+    notifyListeners();
+    _save();
+  }
+
+  void setReviewVoiceBeforeSend(bool value) {
+    _reviewVoiceBeforeSend = value;
     notifyListeners();
     _save();
   }

@@ -6,10 +6,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/backend_config.dart';
 import '../../../core/services/chatia_api_service.dart';
+import '../../../shared/models/agent_option.dart';
 import '../../../shared/models/chat_message.dart';
 import '../../../shared/models/conversation.dart';
 
 enum ChatMode { discussion, health }
+
+/// Erreur de transcription, avec un message déjà lisible par l'utilisateur.
+class VoiceTranscriptionException implements Exception {
+  const VoiceTranscriptionException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 final chatControllerProvider = ChangeNotifierProvider<ChatController>((ref) {
   final apiService = ref.watch(chatiaApiProvider);
@@ -360,9 +371,228 @@ class ChatController extends ChangeNotifier {
     }
   }
 
+  /// Modifie un message de l'utilisateur et relance la conversation à partir
+  /// de là.
+  ///
+  /// Tout ce qui suivait le message est retiré, et ce n'est pas une
+  /// simplification : les réponses qui venaient après répondaient à l'ANCIENNE
+  /// question. Les garder laisserait une conversation où la réponse ne
+  /// correspond pas à la question au-dessus d'elle.
+  ///
+  /// Le retrait est d'abord local pour que l'écran réagisse tout de suite ;
+  /// le serveur suit. Une suppression qui échoue côté serveur est signalée et
+  /// n'empêche pas le renvoi : la nouvelle question est ce que la personne a
+  /// demandé.
+  Future<void> editAndResend(
+    String conversationId,
+    String messageId, {
+    required String newText,
+  }) async {
+    final trimmed = newText.trim();
+    if (trimmed.isEmpty) return;
+
+    final messages = _selectedConversation.messages;
+    final index = messages.indexWhere((m) => m.id == messageId);
+    if (index < 0) return;
+
+    final dropped = messages.sublist(index).toList();
+    final kept = messages.sublist(0, index).toList();
+    final updatedConversation = _selectedConversation.copyWith(messages: kept);
+    _conversations = _conversations
+        .map((c) => c.id == _selectedConversation.id ? updatedConversation : c)
+        .toList();
+    _selectedConversation = updatedConversation;
+    notifyListeners();
+
+    if (_apiService.isAvailable) {
+      final failed = <String>[];
+      for (final message in dropped) {
+        try {
+          await _apiService.deleteMessage(conversationId, message.id);
+        } catch (_) {
+          failed.add(message.id);
+        }
+      }
+      if (failed.isNotEmpty) {
+        // Dit, pas tu : l'historique du serveur et celui de l'écran ne
+        // disent plus la même chose, et c'est visible au prochain
+        // rechargement.
+        errorMessage =
+            '${failed.length} ancien(s) message(s) n\'ont pas pu être '
+            'supprimés sur le serveur ; ils réapparaîtront au rechargement.';
+      }
+    }
+
+    await sendMessage(trimmed);
+  }
+
   void createConversation() {
     _selectedConversation = _createDraftConversation();
     notifyListeners();
+  }
+
+  // ── Agent actif (modelSpecs LibreChat) ─────────────────────────────────────
+  List<AgentOption> _agentOptions = const [AgentOption.fallback];
+  AgentOption _preferredAgent = AgentOption.fallback;
+  bool _agentOptionsRequested = false;
+
+  /// Agents proposés, dans l'ordre du menu LibreChat.
+  List<AgentOption> get agentOptions => _agentOptions;
+
+  /// La conversation affichée est un brouillon (aucun message encore envoyé).
+  bool get isSelectedConversationDraft =>
+      _selectedConversation.id == _draftConversationId;
+
+  /// Agent de la conversation affichée ; pour un brouillon sans agent,
+  /// l'agent choisi par l'utilisateur.
+  AgentOption get activeAgent {
+    final conversationAgentId = _selectedConversation.agentId?.trim();
+    if (conversationAgentId == null || conversationAgentId.isEmpty) {
+      return _preferredAgent;
+    }
+    for (final option in _agentOptions) {
+      if (option.agentId == conversationAgentId) {
+        return option;
+      }
+    }
+    // Conversation d'un agent absent du menu : spec historique de l'app.
+    return AgentOption(
+      specName: BackendConfig.chatSpec,
+      label: 'Agent',
+      agentId: conversationAgentId,
+    );
+  }
+
+  /// Charge une seule fois la liste des agents depuis `/api/config`.
+  /// En cas d'échec, l'app garde l'agent historique ([AgentOption.fallback]).
+  Future<void> loadAgentOptions({bool force = false}) async {
+    if ((_agentOptionsRequested && !force) || !_apiService.isAvailable) {
+      return;
+    }
+    _agentOptionsRequested = true;
+    try {
+      final options = AgentOption.fromConfig(await _apiService.fetchConfig());
+      _agentOptions = List.unmodifiable(options);
+      final kept = options.where((o) => o.agentId == _preferredAgent.agentId);
+      _preferredAgent = kept.isNotEmpty
+          ? kept.first
+          : options.firstWhere((o) => o.isDefault, orElse: () => options.first);
+      notifyListeners();
+    } catch (_) {
+      _agentOptionsRequested = false; // nouvel essai au prochain affichage
+    }
+  }
+
+  /// Choisit l'agent des prochains messages. Si la conversation affichée
+  /// appartient à un autre agent, une nouvelle conversation est ouverte.
+  void selectAgent(AgentOption option) {
+    _preferredAgent = option;
+    _ensureConversationMatchesAgent(option.agentId);
+    notifyListeners();
+  }
+
+  /// Traduit [text] par l'agent MALOBA Traduction, dans une conversation
+  /// temporaire (rien n'est ajouté à l'historique de l'utilisateur).
+  /// [lingalaToFrench] choisit le sens : `[ln→fr]` ou `[fr→ln]`.
+  Future<String> translateText(
+    String text, {
+    bool lingalaToFrench = true,
+  }) async {
+    final source = text.trim();
+    if (source.isEmpty) return '';
+    if (!_apiService.isAvailable) {
+      throw Exception('Session expirée. Veuillez vous reconnecter.');
+    }
+    final agent = _agentOptions.firstWhere(
+      (o) => o.specName == BackendConfig.translationSpec,
+      orElse: () => const AgentOption(
+        specName: BackendConfig.translationSpec,
+        label: 'MALOBA Traduction',
+        agentId: BackendConfig.translationAgentId,
+      ),
+    );
+    // Deux essais : une traduction rapide (≈ 0,3 s) peut finir avant que le
+    // flux SSE soit ouvert ; la relecture de la réponse enregistrée revient
+    // alors parfois vide (constaté le 29/10/2026 : flux 404, réponse en base,
+    // six relectures sans résultat). Un second envoi suffit dans ce cas.
+    for (var attempt = 1; attempt <= 2; attempt++) {
+      var result = '';
+      await for (final event in _apiService.sendAgentChat(
+        agentId: agent.agentId,
+        parentMessageId: '00000000-0000-0000-0000-000000000000',
+        messageId: _uuidV4(),
+        text: '${lingalaToFrench ? '[ln→fr]' : '[fr→ln]'} $source',
+        spec: agent.specName,
+        isTemporary: true,
+      )) {
+        if (event.error != null && event.error!.isNotEmpty) {
+          throw Exception(event.error);
+        }
+        if (event.content.isEmpty) continue;
+        result = event.done ? event.content : result + event.content;
+      }
+      final cleaned = result.trim();
+      if (cleaned.isNotEmpty) return cleaned;
+    }
+    return '';
+  }
+
+  /// Taille sous laquelle un enregistrement est considéré comme vide
+  /// (quelques centaines de millisecondes de silence).
+  static const minVoiceBytes = 2000;
+
+  /// Transcrit un enregistrement SANS l'envoyer : le texte est rendu pour
+  /// que l'utilisateur le relise et le corrige avant l'envoi.
+  Future<String> transcribeVoice({
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    if (!_apiService.isAvailable) {
+      throw const VoiceTranscriptionException(
+        'Session expirée. Veuillez vous reconnecter.',
+      );
+    }
+    if (bytes.length < minVoiceBytes) {
+      throw const VoiceTranscriptionException(
+        'Enregistrement trop court ou silencieux. '
+        'Parlez près du micro et réessayez.',
+      );
+    }
+    String transcript;
+    try {
+      transcript = await _apiService.transcribeSpeech(
+        bytes: bytes,
+        filename: filename,
+      );
+    } catch (error) {
+      throw VoiceTranscriptionException(describeVoiceError(error));
+    }
+    final cleaned = transcript.trim();
+    if (cleaned.isEmpty) {
+      throw const VoiceTranscriptionException(
+        'Aucun texte reconnu dans cet enregistrement.',
+      );
+    }
+    return cleaned;
+  }
+
+  /// Message lisible pour une erreur de transcription serveur.
+  static String describeVoiceError(Object error) {
+    final raw = error.toString().replaceFirst('Exception: ', '').trim();
+    final code = RegExp(r'/api/files/speech/stt : (\d{3})').firstMatch(raw);
+    final status = code != null ? int.parse(code.group(1)!) : null;
+    if (status == 401 || status == 403) {
+      return 'Session expirée. Veuillez vous reconnecter.';
+    }
+    if (status == 413) {
+      return 'Enregistrement trop long. Découpez votre message.';
+    }
+    if ((status != null && (status == 429 || status >= 500)) ||
+        raw.contains('No deployments available')) {
+      return 'Le service de transcription est indisponible pour le moment '
+          '(modèle vocal hors ligne). Réessayez plus tard.';
+    }
+    return raw.length > 160 ? '${raw.substring(0, 160)}…' : raw;
   }
 
   void _ensureConversationMatchesAgent(String agentId) {
@@ -565,7 +795,8 @@ class ChatController extends ChangeNotifier {
       return;
     }
 
-    _ensureConversationMatchesAgent(BackendConfig.chatAgentId);
+    final agent = activeAgent;
+    _ensureConversationMatchesAgent(agent.agentId);
 
     final parentMessageId = _parentMessageId(_selectedConversation);
     final conversationId = _serverConversationId(_selectedConversation.id);
@@ -591,8 +822,8 @@ class ChatController extends ChangeNotifier {
     await _consumeChatStream(
       assistantId: assistantId,
       stream: _apiService.sendAgentChat(
-        agentId: BackendConfig.chatAgentId,
-        spec: BackendConfig.chatSpec,
+        agentId: agent.agentId,
+        spec: agent.specName,
         conversationId: conversationId,
         parentMessageId: parentMessageId,
         messageId: userMessage.id,
@@ -770,7 +1001,8 @@ class ChatController extends ChangeNotifier {
       errorMessage = null;
       notifyListeners();
 
-      _ensureConversationMatchesAgent(BackendConfig.chatAgentId);
+      final agent = activeAgent;
+      _ensureConversationMatchesAgent(agent.agentId);
 
       // ── 1. Upload du fichier ────────────────────────────────────────────────
       final tempFileId = _uuidV4();
@@ -829,8 +1061,8 @@ class ChatController extends ChangeNotifier {
       await _consumeChatStream(
         assistantId: assistantId,
         stream: _apiService.sendAgentChat(
-          agentId: BackendConfig.chatAgentId,
-          spec: BackendConfig.chatSpec,
+          agentId: agent.agentId,
+          spec: agent.specName,
           conversationId: conversationId,
           parentMessageId: parentMessageId,
           messageId: chatMessageId,
@@ -902,7 +1134,7 @@ class ChatController extends ChangeNotifier {
       infoMessage = null;
       _updateAssistantMessage(
         assistantId,
-        'Erreur de transcription : ${error.toString()}',
+        'Transcription impossible : ${describeVoiceError(error)}',
       );
     } finally {
       isStreaming = false;
@@ -942,9 +1174,15 @@ class ChatController extends ChangeNotifier {
         subtitle: cleaned,
       );
 
-      final resolvedAgentId = agentId?.trim().isNotEmpty == true
-          ? agentId!.trim()
-          : BackendConfig.chatAgentId;
+      // Agent imposé par l'appelant (mode Santé) : spec historique, comme avant.
+      final explicitAgentId = agentId?.trim() ?? '';
+      final agent = activeAgent;
+      final resolvedAgentId = explicitAgentId.isNotEmpty
+          ? explicitAgentId
+          : agent.agentId;
+      final resolvedSpec = explicitAgentId.isNotEmpty
+          ? BackendConfig.chatSpec
+          : agent.specName;
       _ensureConversationMatchesAgent(resolvedAgentId);
       final parentMessageId = _parentMessageId(_selectedConversation);
       final conversationId = _serverConversationId(_selectedConversation.id);
@@ -953,7 +1191,7 @@ class ChatController extends ChangeNotifier {
         assistantId: assistantId,
         stream: _apiService.sendAgentChat(
           agentId: resolvedAgentId,
-          spec: BackendConfig.chatSpec,
+          spec: resolvedSpec,
           conversationId: conversationId,
           parentMessageId: parentMessageId,
           messageId: _uuidV4(),
@@ -962,7 +1200,8 @@ class ChatController extends ChangeNotifier {
         errorPrefix: 'Erreur analyse audio',
       );
     } catch (error) {
-      errorMessage = error.toString();
+      final readable = describeVoiceError(error);
+      errorMessage = readable;
       infoMessage = null;
       _updateMessage(
         userMessageId,
@@ -973,7 +1212,7 @@ class ChatController extends ChangeNotifier {
       );
       _updateAssistantMessage(
         assistantId,
-        'Erreur analyse audio : ${error.toString()}',
+        'Transcription impossible : $readable',
       );
       isStreaming = false;
       _hasStreamingResponseStarted = false;

@@ -12,6 +12,7 @@ import 'features/auth/providers/auth_state_provider.dart';
 import 'features/chat/providers/chat_state_provider.dart';
 import 'features/settings/providers/settings_provider.dart';
 import 'shared/theme/app_theme.dart';
+import 'shared/widgets/maloba_glyph.dart';
 
 void main() {
   configureUrlStrategy();
@@ -105,7 +106,7 @@ class _BrandedSplash extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Image.asset('assets/icons/congo_logo.png', width: 140),
+              const MalobaGlyph(size: 120),
               const SizedBox(height: 20),
               Text(
                 'LobaIA',

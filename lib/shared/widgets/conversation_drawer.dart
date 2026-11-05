@@ -6,6 +6,7 @@ import '../../features/auth/providers/auth_state_provider.dart';
 import '../../features/chat/providers/chat_state_provider.dart';
 import '../models/conversation.dart';
 import '../theme/app_theme.dart';
+import 'maloba_glyph.dart';
 
 class ConduitConversationDrawer extends ConsumerStatefulWidget {
   const ConduitConversationDrawer({super.key, required this.onSettingsTap});
@@ -63,10 +64,7 @@ class _ConduitConversationDrawerState
                             color: AppThemeColors.strokeStrong,
                           ),
                         ),
-                        child: Image.asset(
-                          'assets/icons/congo_logo.png',
-                          fit: BoxFit.contain,
-                        ),
+                        child: const Center(child: MalobaGlyph(size: 26)),
                       ),
                       const SizedBox(width: 10),
                       Column(
@@ -126,10 +124,9 @@ class _ConduitConversationDrawerState
                                     border: InputBorder.none,
                                     enabledBorder: InputBorder.none,
                                     focusedBorder: InputBorder.none,
-                                    contentPadding:
-                                        const EdgeInsets.symmetric(
-                                          vertical: 0,
-                                        ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 0,
+                                    ),
                                     hintStyle: theme.textTheme.bodySmall
                                         ?.copyWith(
                                           color: AppThemeColors.textMuted,
@@ -148,9 +145,7 @@ class _ConduitConversationDrawerState
                         tooltip: 'Nouvelle conversation',
                         accent: true,
                         onTap: () {
-                          ref
-                              .read(chatControllerProvider)
-                              .createConversation();
+                          ref.read(chatControllerProvider).createConversation();
                           Navigator.of(context).maybePop();
                         },
                       ),
@@ -462,7 +457,12 @@ class _ConversationTile extends ConsumerWidget {
             Navigator.of(context).maybePop();
           },
           child: Padding(
-            padding: const EdgeInsets.only(left: 4, top: 10, right: 6, bottom: 10),
+            padding: const EdgeInsets.only(
+              left: 4,
+              top: 10,
+              right: 6,
+              bottom: 10,
+            ),
             child: Row(
               children: [
                 AnimatedContainer(
@@ -595,9 +595,7 @@ class _DrawerIconBtn extends StatelessWidget {
           child: Icon(
             icon,
             size: 18,
-            color: accent
-                ? (AppThemeColors.isDark ? Colors.black : Colors.white)
-                : AppThemeColors.textStrong,
+            color: accent ? AppThemeColors.onAccent : AppThemeColors.textStrong,
           ),
         ),
       ),

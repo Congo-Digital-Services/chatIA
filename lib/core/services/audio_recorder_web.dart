@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:html' as html;
+import 'dart:js_interop';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:web/web.dart' as web;
 
 import 'audio_recorder_base.dart';
 
@@ -14,11 +17,80 @@ class AudioRecorderWeb extends AudioRecorderPlatform {
   html.AudioElement? _audioElement;
   StreamSubscription? _audioTimeSub;
 
+  // Mesure du niveau du micro (Web Audio via package:web), pour l'onde en
+  // direct. Flux micro séparé de celui du MediaRecorder : aucune conversion
+  // entre dart:html et package:web, et l'autorisation déjà donnée suffit.
+  web.AudioContext? _audioContext;
+  web.MediaStream? _meterStream;
+  Timer? _levelTimer;
+  StreamController<double>? _levels;
+  int _meterRun = 0;
+
   @override
   bool get isRecording => _isRecording;
 
+  /// Niveau réel du micro, sur la même échelle que le mobile :
+  /// -45 dBFS -> 0.0, 0 dBFS -> 1.0. Sans Web Audio, le flux reste muet
+  /// (onde plate) : on n'affiche pas d'onde factice.
   @override
-  Stream<double>? get onAmplitude => null;
+  Stream<double>? get onAmplitude => _levels?.stream;
+
+  Future<void> _startLevelMeter(StreamController<double> levels) async {
+    final run = ++_meterRun;
+    try {
+      final stream = await web.window.navigator.mediaDevices
+          .getUserMedia(web.MediaStreamConstraints(audio: true.toJS))
+          .toDart;
+      if (run != _meterRun) {
+        // Enregistrement arrêté pendant l'attente : on libère le micro.
+        _stopTracks(stream);
+        return;
+      }
+      final context = web.AudioContext();
+      final analyser = context.createAnalyser()..fftSize = 512;
+      context.createMediaStreamSource(stream).connect(analyser);
+      final buffer = Uint8List(analyser.fftSize).toJS;
+      _audioContext = context;
+      _meterStream = stream;
+      _levelTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
+        analyser.getByteTimeDomainData(buffer);
+        final samples = buffer.toDart;
+        var sum = 0.0;
+        for (final value in samples) {
+          final sample = (value - 128) / 128;
+          sum += sample * sample;
+        }
+        final rms = math.sqrt(sum / samples.length);
+        final db = rms > 0 ? 20 * math.log(rms) / math.ln10 : -100.0;
+        if (!levels.isClosed) {
+          levels.add(((db + 45) / 45).clamp(0.0, 1.0));
+        }
+      });
+    } catch (e) {
+      debugPrint('Mesure du niveau micro indisponible : $e');
+    }
+  }
+
+  void _stopTracks(web.MediaStream stream) {
+    for (final track in stream.getTracks().toDart) {
+      track.stop();
+    }
+  }
+
+  void _stopLevelMeter() {
+    _meterRun++;
+    _levelTimer?.cancel();
+    _levelTimer = null;
+    _levels?.close();
+    _levels = null;
+    final stream = _meterStream;
+    _meterStream = null;
+    if (stream != null) {
+      _stopTracks(stream);
+    }
+    _audioContext?.close();
+    _audioContext = null;
+  }
 
   @override
   Future<void> startRecording() async {
@@ -38,9 +110,16 @@ class AudioRecorderWeb extends AudioRecorderPlatform {
         }
       });
       _mediaRecorder!.start();
+      final levels = StreamController<double>.broadcast();
+      _levels = levels;
+      unawaited(_startLevelMeter(levels));
       _isRecording = true;
     } catch (e) {
       debugPrint('Error starting recording on web: $e');
+      _stopLevelMeter();
+      // Comme sur mobile : l'appelant doit savoir que l'enregistrement n'a pas
+      // démarré (micro refusé ou absent), sinon l'interface croit enregistrer.
+      rethrow;
     }
   }
 
@@ -71,6 +150,7 @@ class AudioRecorderWeb extends AudioRecorderPlatform {
 
     recorder.stop();
     recorder.stream?.getTracks().forEach((track) => track.stop());
+    _stopLevelMeter();
     _mediaRecorder = null;
     _isRecording = false;
 

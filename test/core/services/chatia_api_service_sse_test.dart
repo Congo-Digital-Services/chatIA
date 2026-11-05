@@ -158,62 +158,65 @@ void main() {
     },
   );
 
-  test('uploadImageFile posts multipart payload to image route with explicit mime type', () async {
-    AuthSession? session = _session();
+  test(
+    'uploadImageFile posts multipart payload to image route with explicit mime type',
+    () async {
+      AuthSession? session = _session();
 
-    final sessionService = _buildSessionService(
-      readSession: () => session,
-      writeSession: (value) async => session = value,
-      clearSession: () async => session = null,
-      onSend: (request) async {
-        final multipart = request as http.MultipartRequest;
+      final sessionService = _buildSessionService(
+        readSession: () => session,
+        writeSession: (value) async => session = value,
+        clearSession: () async => session = null,
+        onSend: (request) async {
+          final multipart = request as http.MultipartRequest;
 
-        expect(multipart.method, 'POST');
-        expect(multipart.url.path, '/api/files/images');
-        expect(multipart.fields['endpoint'], 'agents');
-        expect(multipart.fields['endpointType'], 'agents');
-        expect(multipart.fields['file_id'], 'temp-image-1');
-        expect(multipart.fields['width'], '3024');
-        expect(multipart.fields['height'], '4032');
-        expect(multipart.files, hasLength(1));
-        expect(multipart.files.single.field, 'file');
-        expect(
-          multipart.files.single.filename,
-          'image_picker_C7BF6C0C-C08F-49DB-AFA1-0F8B9C889611.jpg',
-        );
-        expect(multipart.files.single.contentType?.mimeType, 'image/jpeg');
+          expect(multipart.method, 'POST');
+          expect(multipart.url.path, '/api/files/images');
+          expect(multipart.fields['endpoint'], 'agents');
+          expect(multipart.fields['endpointType'], 'agents');
+          expect(multipart.fields['file_id'], 'temp-image-1');
+          expect(multipart.fields['width'], '3024');
+          expect(multipart.fields['height'], '4032');
+          expect(multipart.files, hasLength(1));
+          expect(multipart.files.single.field, 'file');
+          expect(
+            multipart.files.single.filename,
+            'image_picker_C7BF6C0C-C08F-49DB-AFA1-0F8B9C889611.jpg',
+          );
+          expect(multipart.files.single.contentType?.mimeType, 'image/jpeg');
 
-        return _jsonResponse({
-          'file_id': 'file-image-1',
-          'temp_file_id': 'temp-image-1',
-          'filepath': '/files/image.jpg',
-          'type': 'image/jpeg',
-          'source': 'local',
-          'width': 3024,
-          'height': 4032,
-        });
-      },
-    );
+          return _jsonResponse({
+            'file_id': 'file-image-1',
+            'temp_file_id': 'temp-image-1',
+            'filepath': '/files/image.jpg',
+            'type': 'image/jpeg',
+            'source': 'local',
+            'width': 3024,
+            'height': 4032,
+          });
+        },
+      );
 
-    final api = ChatiaApiService(
-      baseUrl: 'http://localhost:3080',
-      sessionService: sessionService,
-    );
+      final api = ChatiaApiService(
+        baseUrl: 'http://localhost:3080',
+        sessionService: sessionService,
+      );
 
-    final uploaded = await api.uploadImageFile(
-      bytes: const [1, 2, 3],
-      filename: 'image_picker_C7BF6C0C-C08F-49DB-AFA1-0F8B9C889611.jpg',
-      tempFileId: 'temp-image-1',
-      width: 3024,
-      height: 4032,
-    );
+      final uploaded = await api.uploadImageFile(
+        bytes: const [1, 2, 3],
+        filename: 'image_picker_C7BF6C0C-C08F-49DB-AFA1-0F8B9C889611.jpg',
+        tempFileId: 'temp-image-1',
+        width: 3024,
+        height: 4032,
+      );
 
-    expect(uploaded.fileId, 'file-image-1');
-    expect(uploaded.filepath, '/files/image.jpg');
-    expect(uploaded.type, 'image/jpeg');
-    expect(uploaded.width, 3024);
-    expect(uploaded.height, 4032);
-  });
+      expect(uploaded.fileId, 'file-image-1');
+      expect(uploaded.filepath, '/files/image.jpg');
+      expect(uploaded.type, 'image/jpeg');
+      expect(uploaded.width, 3024);
+      expect(uploaded.height, 4032);
+    },
+  );
 
   test(
     'transcribeSpeech posts audio multipart and reads JSON text response',
@@ -252,70 +255,64 @@ void main() {
     },
   );
 
-  test(
-    'transcribeSpeech accepts plain text body as transcription',
-    () async {
-      AuthSession? session = _session();
+  test('transcribeSpeech accepts plain text body as transcription', () async {
+    AuthSession? session = _session();
 
-      final sessionService = _buildSessionService(
-        readSession: () => session,
-        writeSession: (value) async => session = value,
-        clearSession: () async => session = null,
-        onSend: (request) async {
-          expect(request.url.path, '/api/files/speech/stt');
-          final bytes = utf8.encode('Bonjour les amis');
-          return http.StreamedResponse(
-            Stream<List<int>>.value(bytes),
-            200,
-            headers: {'content-type': 'text/plain'},
-          );
-        },
-      );
+    final sessionService = _buildSessionService(
+      readSession: () => session,
+      writeSession: (value) async => session = value,
+      clearSession: () async => session = null,
+      onSend: (request) async {
+        expect(request.url.path, '/api/files/speech/stt');
+        final bytes = utf8.encode('Bonjour les amis');
+        return http.StreamedResponse(
+          Stream<List<int>>.value(bytes),
+          200,
+          headers: {'content-type': 'text/plain'},
+        );
+      },
+    );
 
-      final api = ChatiaApiService(
-        baseUrl: 'http://localhost:3080',
-        sessionService: sessionService,
-      );
+    final api = ChatiaApiService(
+      baseUrl: 'http://localhost:3080',
+      sessionService: sessionService,
+    );
 
-      final transcription = await api.transcribeSpeech(
-        bytes: const [1, 2, 3],
-        filename: 'voice_123.m4a',
-      );
+    final transcription = await api.transcribeSpeech(
+      bytes: const [1, 2, 3],
+      filename: 'voice_123.m4a',
+    );
 
-      expect(transcription, 'Bonjour les amis');
-    },
-  );
+    expect(transcription, 'Bonjour les amis');
+  });
 
-  test(
-    'transcribeSpeech accepts SSE streamed transcription',
-    () async {
-      AuthSession? session = _session();
+  test('transcribeSpeech accepts SSE streamed transcription', () async {
+    AuthSession? session = _session();
 
-      final sessionService = _buildSessionService(
-        readSession: () => session,
-        writeSession: (value) async => session = value,
-        clearSession: () async => session = null,
-        onSend: (request) async {
-          expect(request.url.path, '/api/files/speech/stt');
-          return _sseResponse(
-            'event: transcribe\ndata: {"text":"Allo le monde"}\n\n',
-          );
-        },
-      );
+    final sessionService = _buildSessionService(
+      readSession: () => session,
+      writeSession: (value) async => session = value,
+      clearSession: () async => session = null,
+      onSend: (request) async {
+        expect(request.url.path, '/api/files/speech/stt');
+        return _sseResponse(
+          'event: transcribe\ndata: {"text":"Allo le monde"}\n\n',
+        );
+      },
+    );
 
-      final api = ChatiaApiService(
-        baseUrl: 'http://localhost:3080',
-        sessionService: sessionService,
-      );
+    final api = ChatiaApiService(
+      baseUrl: 'http://localhost:3080',
+      sessionService: sessionService,
+    );
 
-      final transcription = await api.transcribeSpeech(
-        bytes: const [1, 2, 3],
-        filename: 'voice_123.m4a',
-      );
+    final transcription = await api.transcribeSpeech(
+      bytes: const [1, 2, 3],
+      filename: 'voice_123.m4a',
+    );
 
-      expect(transcription, 'Allo le monde');
-    },
-  );
+    expect(transcription, 'Allo le monde');
+  });
 
   test(
     'streamChat rebuilds final text from responseMessage.content blocks',
@@ -519,6 +516,206 @@ void main() {
     expect(events.single.content, 'Analyse terminee');
     expect(events.single.done, isTrue);
   });
+
+  test(
+    'sendAgentChat ends with a reload event when the saved reply is not found',
+    () async {
+      AuthSession? session = _session();
+
+      final sessionService = _buildSessionService(
+        readSession: () => session,
+        writeSession: (value) async => session = value,
+        clearSession: () async => session = null,
+        onSend: (request) async {
+          if (request.url.path == '/api/agents/chat/agents') {
+            return _jsonResponse({
+              'streamId': 'stream-fast',
+              'conversationId': 'convo-2',
+            });
+          }
+          if (request.url.path.startsWith('/api/agents/chat/stream/')) {
+            return http.StreamedResponse(
+              Stream<List<int>>.value(utf8.encode('not found')),
+              404,
+              request: request,
+            );
+          }
+          return _jsonResponse({'messages': []});
+        },
+      );
+
+      final api = ChatiaApiService(
+        baseUrl: 'http://localhost:3080',
+        sessionService: sessionService,
+      );
+
+      final events = await api
+          .sendAgentChat(
+            agentId: 'agent_123',
+            parentMessageId: '00000000-0000-0000-0000-000000000000',
+            messageId: 'message-2',
+            text: 'Bonjour',
+          )
+          .toList();
+
+      expect(events, hasLength(1));
+      expect(events.single.error, isNull);
+      expect(events.single.done, isTrue);
+      expect(events.single.conversationId, 'convo-2');
+    },
+  );
+
+  test(
+    'sendAgentChat relit une réponse enregistrée au format réel de LibreChat',
+    () async {
+      // Forme exacte du message du 29/10/2026 (conversation 347ba16f) : texte
+      // vide, réponse dans content[{type: text}], isTemporary, expiredAt null.
+      AuthSession? session = _session();
+      var historyCalls = 0;
+      final sessionService = _buildSessionService(
+        readSession: () => session,
+        writeSession: (value) async => session = value,
+        clearSession: () async => session = null,
+        onSend: (request) async {
+          if (request.url.path == '/api/agents/chat/agents') {
+            return _jsonResponse({
+              'streamId': 'stream-reel',
+              'conversationId': 'convo-reel',
+            });
+          }
+          if (request.url.path.startsWith('/api/agents/chat/stream/')) {
+            return http.StreamedResponse(
+              Stream<List<int>>.value(utf8.encode('not found')),
+              404,
+              request: request,
+            );
+          }
+          historyCalls += 1;
+          return _jsonResponse({
+            'messages': [
+              {
+                'messageId': 'c4a72667-f705-44dc-a209-2bd784c06983',
+                'user': '6ad0f636ac6d22c7cce11f2f',
+                '_meiliIndex': true,
+                'attachments': [],
+                'content': [
+                  {'type': 'text', 'text': 'Mbote !'},
+                ],
+                'conversationId': 'convo-reel',
+                'createdAt': '2026-10-29T11:18:00.968Z',
+                'endpoint': 'agents',
+                'error': false,
+                'expiredAt': null,
+                'isCreatedByUser': false,
+                'isTemporary': false,
+                'model': 'agent_L7UzZjsPMTuE_WX3-ZYon',
+                'parentMessageId': 'd21258f2-db45-409d-a292-f31cef26cb93',
+                'sender': 'MALOBA Traduction',
+                'text': '',
+                'tokenCount': 6,
+                'unfinished': false,
+              },
+              {
+                'messageId': 'd21258f2-db45-409d-a292-f31cef26cb93',
+                'parentMessageId': 'b0d6cbf1-d8e9-487b-b143-cd752274a8e0',
+                'isCreatedByUser': true,
+                'text': 'Bonjour',
+              },
+            ],
+            'nextCursor': null,
+          });
+        },
+      );
+      final api = ChatiaApiService(
+        baseUrl: 'http://localhost:3080',
+        sessionService: sessionService,
+      );
+      final events = await api
+          .sendAgentChat(
+            agentId: 'agent_L7UzZjsPMTuE_WX3-ZYon',
+            parentMessageId: 'b0d6cbf1-d8e9-487b-b143-cd752274a8e0',
+            // Identifiant du client, que LibreChat ne reprend pas.
+            messageId: 'id-local-du-client',
+            text: 'Bonjour',
+            conversationId: 'convo-reel',
+          )
+          .toList();
+      expect(historyCalls, 1);
+      expect(events.single.content, 'Mbote !');
+    },
+  );
+
+  test(
+    'sendAgentChat falls back to the saved reply when the SSE stream is gone',
+    () async {
+      AuthSession? session = _session();
+      var streamAttempts = 0;
+      var historyCalls = 0;
+
+      final sessionService = _buildSessionService(
+        readSession: () => session,
+        writeSession: (value) async => session = value,
+        clearSession: () async => session = null,
+        onSend: (request) async {
+          if (request.url.path == '/api/agents/chat/agents') {
+            return _jsonResponse({
+              'streamId': 'stream-fast',
+              'conversationId': 'convo-1',
+            });
+          }
+          if (request.url.path == '/api/agents/chat/stream/stream-fast') {
+            streamAttempts += 1;
+            return http.StreamedResponse(
+              Stream<List<int>>.value(utf8.encode('not found')),
+              404,
+              request: request,
+            );
+          }
+          expect(request.url.path, '/api/messages');
+          expect(request.url.queryParameters['conversationId'], 'convo-1');
+          historyCalls += 1;
+          return _jsonResponse({
+            'messages': [
+              {
+                'messageId': 'reply-1',
+                'parentMessageId': 'message-1',
+                'isCreatedByUser': false,
+                'text': 'Mbote, ozali malamu?',
+              },
+              {
+                'messageId': 'message-1',
+                'parentMessageId': 'parent-1',
+                'isCreatedByUser': true,
+                'text': 'Bonjour, comment allez-vous ?',
+              },
+            ],
+          });
+        },
+      );
+
+      final api = ChatiaApiService(
+        baseUrl: 'http://localhost:3080',
+        sessionService: sessionService,
+      );
+
+      final events = await api
+          .sendAgentChat(
+            agentId: 'agent_123',
+            parentMessageId: 'parent-1',
+            messageId: 'message-1',
+            text: 'Bonjour, comment allez-vous ?',
+            conversationId: 'convo-1',
+          )
+          .toList();
+
+      expect(streamAttempts, greaterThan(1));
+      expect(historyCalls, 1);
+      expect(events, hasLength(1));
+      expect(events.single.content, 'Mbote, ozali malamu?');
+      expect(events.single.done, isTrue);
+      expect(events.single.conversationId, 'convo-1');
+    },
+  );
 
   test(
     'fetchMessages maps assistant history content blocks from responseMessage',

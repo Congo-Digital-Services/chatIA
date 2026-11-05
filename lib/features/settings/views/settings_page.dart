@@ -9,6 +9,7 @@ import '../../../shared/data/mock_data.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../auth/providers/auth_state_provider.dart';
 import '../providers/settings_provider.dart';
+import '../../../shared/widgets/maloba_glyph.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -86,6 +87,16 @@ class SettingsPage extends ConsumerWidget {
                     }
                     ref.read(settingsControllerProvider).setTtsEnabled(value);
                   },
+                ),
+                _SettingsToggleRow(
+                  icon: CupertinoIcons.text_cursor,
+                  title: 'Relire la dictée avant l’envoi',
+                  subtitle:
+                      'Le texte reconnu s’affiche dans la zone de saisie pour être corrigé',
+                  value: settings.reviewVoiceBeforeSend,
+                  onChanged: (value) => ref
+                      .read(settingsControllerProvider)
+                      .setReviewVoiceBeforeSend(value),
                 ),
               ],
             ),
@@ -627,16 +638,7 @@ class _SignOutButton extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (isLoading) ...[
-                SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: const AlwaysStoppedAnimation<Color>(
-                      Color(0xFFFF453A),
-                    ),
-                  ),
-                ),
+                const MalobaLoader(size: 20, color: Color(0xFFFF453A)),
                 const SizedBox(width: 12),
               ] else ...[
                 const Icon(

@@ -10,6 +10,7 @@ import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/button_loader.dart';
 import '../providers/auth_state_provider.dart';
 import 'verify_email_page.dart';
+import '../../../shared/widgets/maloba_glyph.dart';
 
 class ForgotPasswordPage extends ConsumerStatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -76,7 +77,7 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
                 constraints: const BoxConstraints(maxWidth: 430),
                 child: Column(
                   children: [
-                    Image.asset('assets/icons/congo_logo.png', height: 76),
+                    const MalobaGlyph(size: 80),
                     const SizedBox(height: 16),
                     Text(
                       'Mot de passe oublié',
@@ -198,9 +199,7 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
   }
 
   bool _isValidEmail(String value) {
-    return RegExp(
-      r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
-    ).hasMatch(value);
+    return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value);
   }
 
   Future<void> _showSuccessDialog(String email) async {
@@ -208,7 +207,8 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
     await showAppSuccessDialog(
       context,
       title: 'E-mail envoyé !',
-      message: 'Un lien de réinitialisation a été envoyé à $target.\n\n'
+      message:
+          'Un lien de réinitialisation a été envoyé à $target.\n\n'
           'Vérifiez votre boîte de réception, ainsi que vos spams, '
           'puis cliquez sur le lien pour créer votre nouveau mot de passe.',
       onDone: () {

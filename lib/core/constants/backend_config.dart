@@ -28,17 +28,29 @@ class BackendConfig {
 
   static const chatSpec = String.fromEnvironment(
     'CHATIA_CHAT_SPEC',
-    defaultValue: 'assistant-global',
+    defaultValue: 'maloba-traduction',
   );
 
   static const chatAgentId = String.fromEnvironment(
     'CHATIA_CHAT_AGENT_ID',
-    defaultValue: 'agent_0WYc05eqWR1b3aJCqmizj',
+    defaultValue: 'agent_L7UzZjsPMTuE_WX3-ZYon', // MALOBA Traduction
   );
 
   static const healthAgentId = String.fromEnvironment(
     'CHATIA_HEALTH_AGENT_ID',
-    defaultValue: 'agent_0WYc05eqWR1b3aJCqmizj',
+    defaultValue: 'agent_L7UzZjsPMTuE_WX3-ZYon', // MALOBA Traduction
+  );
+
+  /// Agent « MALOBA Traduction » (spec `maloba-traduction`), utilisé si
+  /// `/api/config` ne peut pas être lu : traduction fr <-> ln du mode Santé.
+  static const translationAgentId = String.fromEnvironment(
+    'CHATIA_TRANSLATION_AGENT_ID',
+    defaultValue: 'agent_L7UzZjsPMTuE_WX3-ZYon',
+  );
+
+  static const translationSpec = String.fromEnvironment(
+    'CHATIA_TRANSLATION_SPEC',
+    defaultValue: 'maloba-traduction',
   );
 
   static const userAgent =

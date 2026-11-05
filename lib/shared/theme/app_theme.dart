@@ -16,7 +16,7 @@ class AppThemeColors {
   static Color get cardStrong =>
       isDark ? const Color(0xFF1B1D24) : const Color(0xFFFFFFFF);
   static Color get stroke =>
-      isDark ? const Color(0xFF2A2D35) : const Color(0xFFE5E7EB);
+      isDark ? const Color(0xFF262932) : const Color(0xFFECEEF1);
   static Color get strokeStrong =>
       isDark ? const Color(0xFF353944) : const Color(0xFFD7DAE0);
   static Color get pill =>
@@ -29,14 +29,50 @@ class AppThemeColors {
       isDark ? const Color(0xFFB2B7C2) : const Color(0xFF5F6672);
   static Color get textMuted =>
       isDark ? const Color(0xFF8C93A3) : const Color(0xFF8B93A0);
-  static Color get accent =>
-      isDark ? const Color(0xFFF4F4F5) : const Color(0xFF111111);
-  static Color get accentSoft =>
-      isDark ? const Color(0xFF242730) : const Color(0xFFF3F4F6);
-  static Color get success => textStrong;
-  static Color get danger => textStrong;
-  static Color get warning => textStrong;
+
+  /// Vert de la marque MALOBA (logo 3D, ~/PNUD-AI/ChatAI/LISEZMOI.md) :
+  /// un vert pour fond clair, un vert éclairci pour fond sombre.
+  static const brandGreen = Color(0xFF1F7A4B);
+  static const brandGreenDark = Color(0xFF4FB07B);
+
+  /// Couleur d'accent choisie dans les réglages (vert MALOBA par défaut),
+  /// ajustée pour rester lisible sur le fond (contraste >= 3:1).
+  static Color _accentChoice = brandGreen;
+  static Color get accent => _accentChoice == brandGreen
+      ? (isDark ? brandGreenDark : brandGreen)
+      : _readable(_accentChoice, background, 3.0);
+  static Color get accentSoft => accent.withValues(alpha: isDark ? 0.18 : 0.10);
+
+  /// Couleur du contenu posé SUR l'accent (icône d'un bouton plein).
+  static Color get onAccent => _contrast(Colors.white, accent) >= 3.0
+      ? Colors.white
+      : const Color(0xFF0B1F18);
+  static Color get success =>
+      isDark ? const Color(0xFF34D399) : const Color(0xFF0F9D6E);
+  static Color get danger =>
+      isDark ? const Color(0xFFFF7B7B) : const Color(0xFFD13F3F);
+  static Color get dangerSoft => danger.withValues(alpha: isDark ? 0.16 : 0.08);
+  static Color get warning =>
+      isDark ? const Color(0xFFFBBF5E) : const Color(0xFFB7791F);
   static Color get info => textStrong;
+
+  static double _contrast(Color a, Color b) {
+    final la = a.computeLuminance(), lb = b.computeLuminance();
+    final hi = la > lb ? la : lb, lo = la > lb ? lb : la;
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  /// Assombrit (fond clair) ou éclaircit (fond sombre) la teinte choisie
+  /// jusqu'au contraste demandé, sans en changer la couleur.
+  static Color _readable(Color color, Color bg, double target) {
+    var hsl = HSLColor.fromColor(color);
+    final darken = bg.computeLuminance() > 0.5;
+    for (var i = 0; i < 20 && _contrast(hsl.toColor(), bg) < target; i++) {
+      final l = (hsl.lightness + (darken ? -0.03 : 0.03)).clamp(0.0, 1.0);
+      hsl = hsl.withLightness(l);
+    }
+    return hsl.toColor();
+  }
 
   static LinearGradient get shellGradient => LinearGradient(
     colors: [background, background],
@@ -48,27 +84,62 @@ class AppThemeColors {
     currentBrightness = Theme.of(context).brightness;
   }
 
-  static void update(bool isDarkVal) {
+  static void update(bool isDarkVal, {Color? accentColor}) {
     currentBrightness = isDarkVal ? Brightness.dark : Brightness.light;
+    if (accentColor != null) {
+      _accentChoice = accentColor;
+    }
   }
 }
 
 class AppThemeShadows {
-  static const soft = <BoxShadow>[];
-  static const medium = <BoxShadow>[];
+  static List<BoxShadow> get soft => AppThemeColors.isDark
+      ? const <BoxShadow>[]
+      : const [
+          BoxShadow(
+            color: Color(0x0D101828),
+            blurRadius: 20,
+            offset: Offset(0, 6),
+          ),
+          BoxShadow(
+            color: Color(0x08101828),
+            blurRadius: 2,
+            offset: Offset(0, 1),
+          ),
+        ];
+  static List<BoxShadow> get medium => AppThemeColors.isDark
+      ? const [
+          BoxShadow(
+            color: Color(0x66000000),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ]
+      : const [
+          BoxShadow(
+            color: Color(0x14101828),
+            blurRadius: 32,
+            offset: Offset(0, 12),
+          ),
+          BoxShadow(
+            color: Color(0x0A101828),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ];
 }
 
 class AppTheme {
   static ThemeData build({required bool isDark, required Color accentColor}) {
-    AppThemeColors.update(isDark);
+    AppThemeColors.update(isDark, accentColor: accentColor);
 
     final scheme = ColorScheme(
       brightness: isDark ? Brightness.dark : Brightness.light,
       primary: AppThemeColors.accent,
-      onPrimary: isDark ? Colors.black : Colors.white,
+      onPrimary: AppThemeColors.onAccent,
       secondary: AppThemeColors.accent,
-      onSecondary: isDark ? Colors.black : Colors.white,
-      error: AppThemeColors.textStrong,
+      onSecondary: AppThemeColors.onAccent,
+      error: AppThemeColors.danger,
       onError: isDark ? Colors.black : Colors.white,
       surface: AppThemeColors.surface,
       onSurface: AppThemeColors.textStrong,
@@ -168,8 +239,8 @@ class AppTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: AppThemeColors.textStrong,
-          foregroundColor: isDark ? Colors.black : Colors.white,
+          backgroundColor: AppThemeColors.accent,
+          foregroundColor: AppThemeColors.onAccent,
           disabledBackgroundColor: AppThemeColors.pill,
           disabledForegroundColor: AppThemeColors.textMuted,
           elevation: 0,
@@ -207,10 +278,7 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(
-            color: AppThemeColors.strokeStrong,
-            width: 1.2,
-          ),
+          borderSide: BorderSide(color: AppThemeColors.accent, width: 1.4),
         ),
       ),
       snackBarTheme: const SnackBarThemeData(

@@ -11,6 +11,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../providers/chat_state_provider.dart';
 import '../../settings/providers/settings_provider.dart';
+import '../../../shared/widgets/maloba_glyph.dart';
 
 class MessageBubble extends ConsumerWidget {
   const MessageBubble({
@@ -75,6 +76,7 @@ class MessageBubble extends ConsumerWidget {
                     context,
                     message: 'Message copié.',
                     type: AppToastType.success,
+                    iconOnly: true,
                   );
                 },
               ),
@@ -116,25 +118,51 @@ class MessageBubble extends ConsumerWidget {
     String conversationId,
   ) {
     final controller = TextEditingController(text: message.text);
+    final index = conversation.messages.indexWhere((m) => m.id == message.id);
+    final afterCount =
+        index < 0 ? 0 : conversation.messages.length - index - 1;
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Modifier le message'),
-        content: TextField(
-          controller: controller,
-          maxLines: null,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Nouveau texte…',
-            border: OutlineInputBorder(),
-          ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: controller,
+              maxLines: null,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: 'Nouveau texte…',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (afterCount > 0) ...[
+              const SizedBox(height: 12),
+              // Annoncé avant d'appuyer : renvoyer efface la suite, et
+              // l'apprendre après coup serait une mauvaise surprise.
+              Text(
+                'Renvoyer retirera $afterCount message'
+                '${afterCount > 1 ? 's' : ''} qui suiv'
+                '${afterCount > 1 ? 'ent' : 't'} — '
+                'ils répondaient à l\'ancienne question.',
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                  color: AppThemeColors.textSoft,
+                ),
+              ),
+            ],
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Annuler'),
           ),
-          FilledButton(
+          // Corriger une faute sans refaire répondre le modèle reste
+          // possible : c'est une demande différente, et la fusionner avec le
+          // renvoi obligerait à régénérer pour changer une virgule.
+          TextButton(
             onPressed: () {
               Navigator.pop(ctx);
               final newText = controller.text.trim();
@@ -146,7 +174,20 @@ class MessageBubble extends ConsumerWidget {
                 );
               }
             },
-            child: const Text('Enregistrer'),
+            child: const Text('Corriger seulement'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              final newText = controller.text.trim();
+              if (newText.isEmpty) return;
+              chat.editAndResend(
+                conversationId,
+                message.id,
+                newText: newText,
+              );
+            },
+            child: const Text('Modifier et renvoyer'),
           ),
         ],
       ),
@@ -254,23 +295,23 @@ class MessageBubble extends ConsumerWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 34,
-          height: 34,
-          margin: const EdgeInsets.only(top: 2, right: 10),
-          decoration: BoxDecoration(
-            color: AppThemeColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppThemeColors.stroke),
-          ),
-          child: Center(
-            child: Image.asset(
-              'assets/icons/congo_logo.png',
-              height: 18,
-              fit: BoxFit.contain,
+        // Pendant l'attente, pas de glyphe : le loader anime déjà les mêmes
+        // quatre barres juste à côté, et les afficher deux fois donne à lire
+        // deux logos au lieu d'un état. La place est gardée pour que le texte
+        // ne saute pas quand la réponse arrive.
+        if (isPendingAssistant)
+          const SizedBox(width: 44, height: 34)
+        else
+          Container(
+            width: 34,
+            height: 34,
+            margin: const EdgeInsets.only(top: 2, right: 10),
+            decoration: BoxDecoration(
+              color: AppThemeColors.surface,
+              borderRadius: BorderRadius.circular(12),
             ),
+            child: const Center(child: MalobaGlyph(size: 20)),
           ),
-        ),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.only(top: 4, right: 12),
@@ -325,13 +366,12 @@ class MessageBubble extends ConsumerWidget {
                         icon: CupertinoIcons.doc_on_doc,
                         label: 'Copier',
                         onTap: () {
-                          Clipboard.setData(
-                            ClipboardData(text: message.text),
-                          );
+                          Clipboard.setData(ClipboardData(text: message.text));
                           showAppToast(
                             context,
                             message: 'Réponse copiée.',
                             type: AppToastType.success,
+                            iconOnly: true,
                           );
                         },
                       ),
@@ -347,64 +387,27 @@ class MessageBubble extends ConsumerWidget {
   }
 }
 
-class _AssistantPendingState extends StatefulWidget {
+class _AssistantPendingState extends StatelessWidget {
   const _AssistantPendingState();
-
-  @override
-  State<_AssistantPendingState> createState() => _AssistantPendingStateState();
-}
-
-class _AssistantPendingStateState extends State<_AssistantPendingState>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          'Réponse en préparation',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: AppThemeColors.textSoft,
-            fontWeight: FontWeight.w600,
+        const MalobaLoader(size: 22, semanticLabel: 'Réponse en préparation'),
+        const SizedBox(width: 10),
+        // Le libellé lu à voix haute reste stable : un lecteur d'écran qui
+        // annoncerait un mot différent toutes les deux secondes rendrait
+        // l'attente pénible au lieu de l'illustrer.
+        Semantics(
+          label: 'Réponse en préparation',
+          liveRegion: false,
+          child: ExcludeSemantics(
+            child: MalobaThinkingText(
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
           ),
-        ),
-        const SizedBox(width: 8),
-        AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            return Row(
-              children: List.generate(3, (index) {
-                final phase = (_controller.value * 3) - index;
-                final opacity = phase.clamp(0.25, 1.0).toDouble();
-                return Container(
-                  width: 6,
-                  height: 6,
-                  margin: EdgeInsets.only(right: index == 2 ? 0 : 4),
-                  decoration: BoxDecoration(
-                    color: AppThemeColors.textSoft.withValues(alpha: opacity),
-                    shape: BoxShape.circle,
-                  ),
-                );
-              }),
-            );
-          },
         ),
       ],
     );

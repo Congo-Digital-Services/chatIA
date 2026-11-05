@@ -8,9 +8,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/backend_config.dart';
 import '../../../core/services/audio_recorder.dart';
 import '../../../core/services/file_picker.dart';
+import '../../../shared/theme/app_motion.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../settings/providers/settings_provider.dart';
 import '../providers/chat_state_provider.dart';
+import 'health_voice_session.dart';
+import '../../../shared/widgets/maloba_glyph.dart';
 
 class ChatComposer extends ConsumerStatefulWidget {
   const ChatComposer({
@@ -20,6 +24,7 @@ class ChatComposer extends ConsumerStatefulWidget {
     required this.isAwaitingResponse,
     required this.isRenderingResponse,
     this.mode = ChatMode.discussion,
+    this.onHealthSend,
   });
 
   final ValueChanged<String> onSend;
@@ -27,6 +32,9 @@ class ChatComposer extends ConsumerStatefulWidget {
   final bool isAwaitingResponse;
   final bool isRenderingResponse;
   final ChatMode mode;
+
+  /// Appelé juste avant l'envoi d'un message dicté en mode Santé.
+  final VoidCallback? onHealthSend;
 
   @override
   ConsumerState<ChatComposer> createState() => _ChatComposerState();
@@ -41,6 +49,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
 
   bool _hasText = false;
   bool _isRecording = false;
+  bool _isTranscribing = false;
   int _recordDurationSeconds = 0;
   Timer? _recordTimer;
   PickedFileInfo? _attachedFile;
@@ -52,11 +61,11 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
       vsync: this,
       duration: const Duration(milliseconds: 200),
     );
-    _sendScale = CurvedAnimation(parent: _sendAnim, curve: Curves.easeOutBack);
+    _sendScale = CurvedAnimation(parent: _sendAnim, curve: AppMotion.easeOut);
     _micOpacity = Tween<double>(
       begin: 1,
       end: 0,
-    ).animate(CurvedAnimation(parent: _sendAnim, curve: Curves.easeIn));
+    ).animate(CurvedAnimation(parent: _sendAnim, curve: AppMotion.easeOut));
     _controller.addListener(_onTextChanged);
   }
 
@@ -218,6 +227,15 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
   }
 
   Future<void> _sendRecording() async {
+    // Dictée relue : la transcription va dans la zone de saisie, l'utilisateur
+    // la corrige puis envoie. Le mode Santé garde l'envoi direct historique.
+    final reviewFirst =
+        widget.mode != ChatMode.health &&
+        ref.read(settingsControllerProvider).reviewVoiceBeforeSend;
+    if (reviewFirst) {
+      await _transcribeRecordingToInput();
+      return;
+    }
     final durationText = _formatDuration(_recordDurationSeconds);
     try {
       final audio = await audioRecorder.stopRecording();
@@ -258,6 +276,76 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
     }
   }
 
+  /// Mode Santé : dictée plein écran transcrite en direct, puis envoi du
+  /// texte relu à l'agent Santé. Si le micro ne démarre pas, l'écran le dit
+  /// et permet d'écrire le message à la main.
+  Future<void> _openHealthSession() async {
+    final text = await HealthVoiceSession.open(context);
+    if (!mounted || text == null || text.trim().isEmpty) {
+      return;
+    }
+    widget.onHealthSend?.call();
+    await ref
+        .read(chatControllerProvider)
+        .sendMessageAsAgent(text, agentId: BackendConfig.healthAgentId);
+  }
+
+  Future<void> _transcribeRecordingToInput() async {
+    RecordedAudioInfo? audio;
+    try {
+      audio = await audioRecorder.stopRecording();
+    } catch (_) {
+      audio = null;
+    }
+    _stopRecordingTimer();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isRecording = false;
+      _recordDurationSeconds = 0;
+    });
+    final bytes = audio?.bytes;
+    if (audio == null || bytes == null || bytes.isEmpty) {
+      showAppToast(
+        context,
+        message: 'Aucun son enregistré.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    setState(() => _isTranscribing = true);
+    try {
+      final text = await ref
+          .read(chatControllerProvider)
+          .transcribeVoice(bytes: bytes, filename: audio.name);
+      if (!mounted) {
+        return;
+      }
+      final existing = _controller.text.trimRight();
+      final merged = existing.isEmpty ? text : '$existing $text';
+      _controller.value = TextEditingValue(
+        text: merged,
+        selection: TextSelection.collapsed(offset: merged.length),
+      );
+      showAppToast(
+        context,
+        message: 'Transcription terminée. Relisez puis envoyez.',
+        type: AppToastType.success,
+        iconOnly: true,
+      );
+    } on VoiceTranscriptionException catch (error) {
+      if (mounted) {
+        showAppToast(context, message: error.message, type: AppToastType.error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isTranscribing = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final chat = ref.watch(chatControllerProvider);
@@ -280,10 +368,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
       curve: Curves.easeOut,
       padding: EdgeInsets.fromLTRB(16, 0, 16, isLandscape ? 8 : 18),
       child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppThemeColors.background,
-          border: Border(top: BorderSide(color: AppThemeColors.stroke)),
-        ),
+        decoration: BoxDecoration(color: AppThemeColors.background),
         child: Padding(
           padding: const EdgeInsets.only(top: 10),
           child: Column(
@@ -306,109 +391,137 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                 duration: const Duration(milliseconds: 220),
                 decoration: BoxDecoration(
                   color: AppThemeColors.cardStrong,
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(28),
                   border: Border.all(color: AppThemeColors.stroke),
+                  boxShadow: AppThemeShadows.soft,
                 ),
-                child: _isRecording
-                    ? _buildRecordingBar(context, isBusy: isBusy)
-                    : Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              left: 6,
-                              bottom: 6,
-                              top: 6,
-                            ),
-                            child: _ComposerIconBtn(
-                              icon: CupertinoIcons.add,
-                              onTap: isBusy ? null : _showFileSourceSheet,
-                              tooltip: 'Joindre un fichier',
-                            ),
-                          ),
-                          Expanded(
-                            child: TextField(
-                              controller: _controller,
-                              enabled: !isBusy,
-                              minLines: 1,
-                              maxLines: 5,
-                              textInputAction: TextInputAction.newline,
-                              onSubmitted: (_) {
-                                if (_controller.text.trim().isNotEmpty) {
-                                  _submit();
-                                }
-                              },
-                              decoration: InputDecoration(
-                                hintText: 'Posez une question ',
-                                border: InputBorder.none,
-                                enabledBorder: InputBorder.none,
-                                focusedBorder: InputBorder.none,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 15,
-                                ),
-                                hintStyle: Theme.of(context).textTheme.bodyLarge
-                                    ?.copyWith(
-                                      color: AppThemeColors.textMuted,
-                                      fontWeight: FontWeight.w400,
-                                    ),
-                              ),
-                              style: Theme.of(context).textTheme.bodyLarge
-                                  ?.copyWith(
-                                    color: AppThemeColors.textStrong,
-                                    height: 1.45,
-                                  ),
-                            ),
-                          ),
-                          if (isBusy)
-                            Padding(
-                              padding: const EdgeInsets.only(
-                                right: 6,
-                                bottom: 6,
-                                top: 6,
-                              ),
-                              child: _StopButton(
-                                onTap: () => ref
-                                    .read(chatControllerProvider)
-                                    .cancelStreaming(),
-                              ),
-                            )
-                          else if (!hasAction)
-                            FadeTransition(
-                              opacity: _micOpacity,
-                              child: IgnorePointer(
-                                ignoring: _hasText || _attachedFile != null,
-                                child: Padding(
-                                  padding: const EdgeInsets.only(
-                                    right: 4,
-                                    bottom: 6,
-                                    top: 6,
-                                  ),
-                                  child: _ComposerIconBtn(
-                                    icon: CupertinoIcons.mic,
-                                    onTap: isBusy ? null : _startRecording,
-                                    tooltip: 'Dicter',
-                                  ),
-                                ),
-                              ),
-                            )
-                          else if (hasAction)
-                            ScaleTransition(
-                              scale: _sendScale,
-                              child: Padding(
+                child: AnimatedSwitcher(
+                  duration: AppMotion.duration(context, AppMotion.fast),
+                  switchInCurve: AppMotion.easeOut,
+                  switchOutCurve: AppMotion.easeOut,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(
+                      scale: Tween<double>(
+                        begin: 0.98,
+                        end: 1,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  ),
+                  child: _isRecording
+                      ? KeyedSubtree(
+                          key: const ValueKey('enregistrement'),
+                          child: _buildRecordingBar(context, isBusy: isBusy),
+                        )
+                      : KeyedSubtree(
+                          key: const ValueKey('saisie'),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Padding(
                                 padding: const EdgeInsets.only(
-                                  right: 6,
+                                  left: 6,
                                   bottom: 6,
                                   top: 6,
                                 ),
-                                child: _SendButton(
-                                  onTap: isBusy ? null : _submit,
-                                  isLoading: false,
+                                child: _ComposerIconBtn(
+                                  icon: CupertinoIcons.add,
+                                  onTap: isBusy ? null : _showFileSourceSheet,
+                                  tooltip: 'Joindre un fichier',
                                 ),
                               ),
-                            ),
-                        ],
-                      ),
+                              Expanded(
+                                child: TextField(
+                                  controller: _controller,
+                                  enabled: !isBusy,
+                                  minLines: 1,
+                                  maxLines: 5,
+                                  textInputAction: TextInputAction.newline,
+                                  onSubmitted: (_) {
+                                    if (_controller.text.trim().isNotEmpty) {
+                                      _submit();
+                                    }
+                                  },
+                                  decoration: InputDecoration(
+                                    hintText: _isTranscribing
+                                        ? 'Transcription en cours…'
+                                        : 'Posez une question ',
+                                    border: InputBorder.none,
+                                    enabledBorder: InputBorder.none,
+                                    focusedBorder: InputBorder.none,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 15,
+                                    ),
+                                    hintStyle: Theme.of(context)
+                                        .textTheme
+                                        .bodyLarge
+                                        ?.copyWith(
+                                          color: AppThemeColors.textMuted,
+                                          fontWeight: FontWeight.w400,
+                                        ),
+                                  ),
+                                  style: Theme.of(context).textTheme.bodyLarge
+                                      ?.copyWith(
+                                        color: AppThemeColors.textStrong,
+                                        height: 1.45,
+                                      ),
+                                ),
+                              ),
+                              if (isBusy)
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    right: 6,
+                                    bottom: 6,
+                                    top: 6,
+                                  ),
+                                  child: _StopButton(
+                                    onTap: () => ref
+                                        .read(chatControllerProvider)
+                                        .cancelStreaming(),
+                                  ),
+                                )
+                              else if (!hasAction)
+                                FadeTransition(
+                                  opacity: _micOpacity,
+                                  child: IgnorePointer(
+                                    ignoring: _hasText || _attachedFile != null,
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(
+                                        right: 4,
+                                        bottom: 6,
+                                        top: 6,
+                                      ),
+                                      child: _ComposerIconBtn(
+                                        icon: CupertinoIcons.mic,
+                                        onTap: isBusy || _isTranscribing
+                                            ? null
+                                            : _startRecording,
+                                        tooltip: 'Dicter',
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              else if (hasAction)
+                                ScaleTransition(
+                                  scale: _sendScale,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(
+                                      right: 6,
+                                      bottom: 6,
+                                      top: 6,
+                                    ),
+                                    child: _SendButton(
+                                      onTap: isBusy ? null : _submit,
+                                      isLoading: false,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                ),
               ),
             ],
           ),
@@ -422,55 +535,25 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
     required bool isBusy,
     required bool isLandscape,
   }) {
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 160),
-      curve: Curves.easeOut,
-      padding: EdgeInsets.fromLTRB(16, 0, 16, isLandscape ? 8 : 18),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppThemeColors.background,
-          border: Border(top: BorderSide(color: AppThemeColors.stroke)),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                decoration: BoxDecoration(
-                  color: AppThemeColors.cardStrong,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: AppThemeColors.stroke),
-                ),
-                child: _isRecording
-                    ? _buildRecordingBar(context, isBusy: isBusy)
-                    : Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 14,
-                        ),
-                        child: Column(
-                          children: [
-                            _HealthMicButton(
-                              onTap: isBusy ? null : _startRecording,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Appuyez sur le micro pour enregistrer vos soucis '
-                              'de santé, puis envoyez.',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: AppThemeColors.textMuted),
-                            ),
-                          ],
-                        ),
-                      ),
-              ),
-            ],
+    // Mode Santé : le micro seul, sans boîte autour. L'enregistrement se fait
+    // dans l'écran plein de dictée (HealthVoiceSession), pas dans le composeur.
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 8, 16, isLandscape ? 8 : 22),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _HealthMicButton(
+            onTap: isBusy || _isTranscribing ? null : _openHealthSession,
           ),
-        ),
+          const SizedBox(height: 10),
+          Text(
+            'Touchez pour parler',
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppThemeColors.textMuted),
+          ),
+        ],
       ),
     );
   }
@@ -490,10 +573,14 @@ class _ChatComposerState extends ConsumerState<ChatComposer>
                 context,
               ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
             ),
-            if (!compact)
-              const Expanded(child: Center(child: _LiveWaveform()))
-            else
-              const Spacer(),
+            // Écran étroit : onde plus courte plutôt que masquée.
+            Expanded(
+              child: Center(
+                child: compact
+                    ? const _LiveWaveform(barCount: 12)
+                    : const _LiveWaveform(),
+              ),
+            ),
             _ComposerIconBtn(
               icon: CupertinoIcons.trash,
               onTap: _cancelRecording,
@@ -650,20 +737,25 @@ class _HealthMicButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconColor = AppThemeColors.isDark ? Colors.black : Colors.white;
-    return Material(
-      color: onTap == null ? AppThemeColors.pill : AppThemeColors.pillSelected,
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: SizedBox(
-          width: 72,
-          height: 72,
-          child: Icon(
-            CupertinoIcons.mic_fill,
-            size: 30,
-            color: onTap == null ? AppThemeColors.textMuted : iconColor,
+    final iconColor = AppThemeColors.onAccent;
+    return PressScale(
+      enabled: onTap != null,
+      child: Material(
+        color: onTap == null ? AppThemeColors.pill : AppThemeColors.accent,
+        shape: const CircleBorder(),
+        elevation: onTap == null ? 0 : 3,
+        shadowColor: AppThemeColors.accent.withValues(alpha: 0.35),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 72,
+            height: 72,
+            child: Icon(
+              CupertinoIcons.mic_fill,
+              size: 30,
+              color: onTap == null ? AppThemeColors.textMuted : iconColor,
+            ),
           ),
         ),
       ),
@@ -679,27 +771,25 @@ class _SendButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconColor = AppThemeColors.isDark ? Colors.black : Colors.white;
-    return Material(
-      color: onTap == null ? AppThemeColors.pill : AppThemeColors.textStrong,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: SizedBox(
-          width: 44,
-          height: 44,
-          child: Center(
-            child: isLoading
-                ? SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 1.8,
-                      valueColor: AlwaysStoppedAnimation<Color>(iconColor),
-                    ),
-                  )
-                : Icon(CupertinoIcons.arrow_up, color: iconColor, size: 20),
+    final iconColor = onTap == null
+        ? AppThemeColors.textMuted
+        : AppThemeColors.onAccent;
+    return PressScale(
+      enabled: onTap != null,
+      child: Material(
+        color: onTap == null ? AppThemeColors.pill : AppThemeColors.accent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(
+              child: isLoading
+                  ? MalobaLoader(size: 20, color: iconColor)
+                  : Icon(CupertinoIcons.arrow_up, color: iconColor, size: 20),
+            ),
           ),
         ),
       ),
@@ -750,15 +840,16 @@ class _BlinkingRedDotState extends State<_BlinkingRedDot>
 }
 
 class _LiveWaveform extends StatefulWidget {
-  const _LiveWaveform();
+  const _LiveWaveform({this.barCount = 26});
+
+  final int barCount;
 
   @override
   State<_LiveWaveform> createState() => _LiveWaveformState();
 }
 
 class _LiveWaveformState extends State<_LiveWaveform> {
-  static const int _barCount = 26;
-  final List<double> _levels = List.filled(_barCount, 0.06);
+  late final List<double> _levels = List.filled(widget.barCount, 0.06);
   StreamSubscription<double>? _amplitudeSub;
   Timer? _fallbackTimer;
   int _index = 0;
@@ -804,7 +895,7 @@ class _LiveWaveformState extends State<_LiveWaveform> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
-      children: List.generate(_barCount, (index) {
+      children: List.generate(_levels.length, (index) {
         final level = _levels[index];
         final height = 6 + level * 34;
         return Container(

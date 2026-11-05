@@ -7,6 +7,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/button_loader.dart';
 import '../providers/auth_state_provider.dart';
+import '../../../shared/widgets/maloba_glyph.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -66,7 +67,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
     if (auth.isRestoring)
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: Center(child: MalobaLoader(size: 44)));
     final theme = Theme.of(context);
     return Scaffold(
       backgroundColor: AppThemeColors.background,
@@ -80,7 +81,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 constraints: const BoxConstraints(maxWidth: 430),
                 child: Column(
                   children: [
-                    Image.asset('assets/icons/congo_logo.png', height: 92),
+                    const MalobaGlyph(size: 96),
                     const SizedBox(height: 20),
                     Text('LobaIA', style: theme.textTheme.displaySmall),
                     const SizedBox(height: 8),
