@@ -92,29 +92,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       ),
                     ),
                     const SizedBox(height: 32),
-                    Container(
-                      padding: const EdgeInsets.all(22),
-                      decoration: BoxDecoration(
-                        color: AppThemeColors.surface.withValues(alpha: .96),
-                        borderRadius: BorderRadius.circular(28),
-                        border: Border.all(color: AppThemeColors.stroke),
-                        boxShadow: AppThemeShadows.medium,
-                      ),
+                    // Formulaire posé sur la page, sans carte (ni ombre, ni
+                    // bordure, ni fond).
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            'Bon retour',
-                            style: theme.textTheme.headlineSmall,
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Connectez-vous pour retrouver vos conversations.',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: AppThemeColors.textSoft,
-                            ),
-                          ),
-                          const SizedBox(height: 22),
                           _field(
                             _email,
                             'Adresse e-mail',
